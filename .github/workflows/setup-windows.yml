@@ -35,12 +35,12 @@ jobs:
           workspaces: src-tauri
       - run: npm ci
       # beforeBuildCommand (npm run build) construit le frontend ; Tauri
-      # télécharge NSIS lui-même. `-p dokos-assistant` : seulement l'appli,
+      # télécharge NSIS lui-même. `-p dokos-asso` : seulement l'appli,
       # pas les autres paquets du workspace.
-      - run: npx tauri build --bundles nsis -- -p dokos-assistant
+      - run: npx tauri build --bundles nsis -- -p dokos-asso
       - uses: actions/upload-artifact@v4
         with:
-          name: dokos-assistant-setup-${{ github.sha }}
+          name: dokos-asso-setup-${{ github.sha }}
           path: src-tauri/target/release/bundle/nsis/*-setup.exe
           if-no-files-found: error
           retention-days: 30
@@ -57,5 +57,5 @@ jobs:
           $global:LASTEXITCODE = 0
           gh release create dernier-build "$($setup.FullName)" `
             --target "${{ github.sha }}" --prerelease `
-            --title "Dokos Assistant $version (dernier build, $court)" `
+            --title "Dokos Asso $version (dernier build, $court)" `
             --notes "Installateur Windows construit automatiquement depuis le commit $court. Non signé : SmartScreen demandera une confirmation. À essayer sur l'instance de test avant déploiement."

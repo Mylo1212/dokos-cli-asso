@@ -191,6 +191,18 @@ pub async fn diagnostic() -> Resultat<DiagnosticVue> {
 
 // --- Ventes -------------------------------------------------------------
 
+/// Tous les clients actifs, pour les listes déroulantes.
+#[tauri::command]
+pub async fn liste_clients() -> Resultat<Vec<ClientVue>> {
+    bloquant(|| services::lister_les_clients(&connexions::connecter(Profil::Ventes)?.1)).await
+}
+
+/// Tous les articles vendables, ou ceux d'un groupe et de ses sous-groupes, pour les listes déroulantes.
+#[tauri::command]
+pub async fn liste_articles(groupe: Option<String>) -> Resultat<Vec<ArticleVue>> {
+    bloquant(move || services::lister_les_articles(&connexions::connecter(Profil::Ventes)?.1, groupe.as_deref())).await
+}
+
 #[tauri::command]
 pub async fn chercher_clients(recherche: String) -> Resultat<Vec<ClientVue>> {
     bloquant(move || services::chercher_clients(&connexions::connecter(Profil::Ventes)?.1, &recherche)).await
@@ -455,7 +467,7 @@ pub async fn exporter_inscrits(id: String) -> Resultat<String> {
 pub async fn alertes_rh(aujourdhui_texte: String) -> Resultat<AlertesRhVue> {
     bloquant(move || {
         let (config, dokos) = connexions::connecter(Profil::Rh)?;
-        services_suivi::alertes_rh(&dokos, &config.url_base(), &regles()?, aujourdhui(&aujourdhui_texte)?)
+        services_suivi::alertes_rh(&dokos, &config.url_base(), aujourdhui(&aujourdhui_texte)?)
     })
     .await
 }
@@ -618,134 +630,8 @@ pub async fn publier_evenement(id: String) -> Resultat<PublicationVue> {
     .await
 }
 
-// --- Contrats -------------------------------------------------------------
-
-fn regles() -> Resultat<conformite::Regles> {
-    dokos_config::charger_regles().map(|(r, _)| r).map_err(erreur)
-}
-
 fn dossier_documents() -> Resultat<PathBuf> {
     dokos_config::dossier_documents().map_err(erreur)
-}
-
-#[tauri::command]
-pub async fn listes_rh() -> Resultat<ListesRh> {
-    bloquant(|| {
-        let (config, dokos) = connexions::connecter(Profil::Rh)?;
-        dokos.oublier_structures();
-        services::listes_rh(&dokos, &regles()?, config.societe.as_deref())
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn chercher_employes(recherche: String) -> Resultat<Vec<EmployeVue>> {
-    bloquant(move || {
-        let (config, dokos) = connexions::connecter(Profil::Rh)?;
-        services::chercher_des_employes(&dokos, &config.url_base(), &recherche)
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn creer_employe(demande: DemandeEmploye) -> Resultat<ResultatEmploye> {
-    bloquant(move || {
-        let (config, dokos) = connexions::connecter(Profil::Rh)?;
-        let resultat = services::creer_un_employe(&dokos, &config.url_base(), &demande, config.societe.as_deref());
-        if let Ok(r) = &resultat {
-            noter(
-                Profil::Rh,
-                "creation",
-                "Employee",
-                &r.employe.id,
-                if r.cree { "cree" } else { "existant" },
-                &r.employe.nom,
-            );
-        }
-        resultat
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn verifier_contrat(demande: DemandeContrat) -> Resultat<VerificationContratVue> {
-    bloquant(move || {
-        let (config, dokos) = connexions::connecter(Profil::Rh)?;
-        // « Vérifier » relit la structure du contrat (un champ créé entre-temps est vu) ;
-        // la création qui suit reprend celle-ci.
-        dokos.oublier_structures();
-        services::verifier_un_contrat(&dokos, &regles()?, &demande, config.societe.as_deref())
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn creer_contrat(demande: DemandeContrat, autoriser_doublon: bool) -> Resultat<ResultatContrat> {
-    bloquant(move || {
-        let (config, dokos) = connexions::connecter(Profil::Rh)?;
-        let resultat = services::creer_un_contrat(
-            &dokos,
-            &config.url_base(),
-            &regles()?,
-            &demande,
-            config.societe.as_deref(),
-            si_doublon(autoriser_doublon),
-        );
-        match &resultat {
-            Ok(r) => noter(
-                Profil::Rh,
-                "creation",
-                "Employment Contract",
-                &r.id,
-                if r.cree { "cree" } else { "existant" },
-                &demande.employe,
-            ),
-            Err(e) => noter(Profil::Rh, "creation", "Employment Contract", "", "refuse", &e.message),
-        }
-        resultat
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn verifier_format(
-    format: String,
-    type_contrat: String,
-    temps_partiel: bool,
-) -> Resultat<VerificationFormatVue> {
-    bloquant(move || {
-        let (_, dokos) = connexions::connecter(Profil::Rh)?;
-        dokos.oublier_structures();
-        let regles = regles()?;
-        let contexte = services::contexte_format(&regles, &type_contrat, temps_partiel);
-        services::verifier_un_format(&dokos, &regles, &format, &contexte).map(|(vue, _)| vue)
-    })
-    .await
-}
-
-/// Écrit le gabarit proposé dans Documents\Dokos. Rien n'est modifié dans Dokos.
-#[tauri::command]
-pub async fn enregistrer_proposition(format: String, type_contrat: String, temps_partiel: bool) -> Resultat<String> {
-    bloquant(move || {
-        let (_, dokos) = connexions::connecter(Profil::Rh)?;
-        let regles = regles()?;
-        let contexte = services::contexte_format(&regles, &type_contrat, temps_partiel);
-        let (_, gabarit) = services::verifier_un_format(&dokos, &regles, &format, &contexte)?;
-        let gabarit = gabarit.ok_or_else(|| ErreurVue::validation("aucune mention à ajouter : rien à enregistrer"))?;
-        let chemin = services::chemin_proposition(&dossier_documents()?, &format);
-        std::fs::write(&chemin, gabarit).map_err(|e| ErreurVue::fichier(format!("{} : {e}", chemin.display())))?;
-        Ok(chemin.display().to_string())
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn pdf_contrat(id: String, format: String) -> Resultat<String> {
-    bloquant(move || {
-        let (_, dokos) = connexions::connecter(Profil::Rh)?;
-        services::pdf_contrat(&dokos, &dossier_documents()?, &id, &format).map(|c| c.display().to_string())
-    })
-    .await
 }
 
 // --- Assistant IA (Open WebUI) -------------------------------------------
@@ -760,7 +646,6 @@ pub async fn etat_ia() -> Resultat<EtatIa> {
             modele: ia.modele,
             bases_ventes: ia.bases.ventes.join(", "),
             bases_formulaires: ia.bases.formulaires.join(", "),
-            bases_contrats: ia.bases.contrats.join(", "),
             cle_enregistree: dokos_config::cle_ia_enregistree(),
         })
     })
@@ -777,7 +662,6 @@ pub async fn enregistrer_ia(
     modele: String,
     bases_ventes: String,
     bases_formulaires: String,
-    bases_contrats: String,
     cle: String,
 ) -> Resultat<String> {
     bloquant(move || {
@@ -790,7 +674,6 @@ pub async fn enregistrer_ia(
         config.ia.modele = Some(modele.trim().to_owned()).filter(|m| !m.is_empty()).unwrap_or(config.ia.modele);
         config.ia.bases.ventes = dokos_config::liste_bases(&bases_ventes);
         config.ia.bases.formulaires = dokos_config::liste_bases(&bases_formulaires);
-        config.ia.bases.contrats = dokos_config::liste_bases(&bases_contrats);
         dokos_config::ecrire(&config).map_err(erreur)?;
         if !cle.trim().is_empty() {
             dokos_config::enregistrer_cle_ia(&cle).map_err(erreur)?;
@@ -837,7 +720,7 @@ pub async fn discuter(messages: Vec<MessageChatVue>, onglet: String, aujourdhui:
         let ia = connexions::connecter_ia()?;
         let b = &ia.0.bases;
         let mut bases: Vec<String> = Vec::new();
-        for base in b.ventes.iter().chain(&b.formulaires).chain(&b.contrats) {
+        for base in b.ventes.iter().chain(&b.formulaires) {
             if !bases.contains(base) {
                 bases.push(base.clone());
             }
@@ -874,51 +757,18 @@ pub async fn assistant_evenement(demande: String, aujourdhui: String) -> Resulta
     .await
 }
 
+// --- Export Excel ----------------------------------------------------------
+
+/// Groupes et territoires que les filtres de la liste acceptent, pour les listes déroulantes.
 #[tauri::command]
-pub async fn assistant_contrat(demande: String, aujourdhui: String) -> Resultat<PropositionContratVue> {
+pub async fn references_export(liste: String) -> Resultat<ReferencesExportVue> {
     bloquant(move || {
-        let (config_dokos, dokos) = connexions::connecter(Profil::Rh)?;
-        let ia = connexions::connecter_ia()?;
-        services_ia::contrat(
-            &dokos,
-            &config_dokos.url_base(),
-            &ia.1,
-            &ia.0.bases.contrats,
-            &demande,
-            services_ia::aujourdhui(&aujourdhui)?,
-        )
+        let liste: dokos_core::export::TypeListe = liste.parse().map_err(erreur)?;
+        let (_, dokos) = connexions::connecter(services_listes::profil(liste))?;
+        services_listes::references(&dokos, liste)
     })
     .await
 }
-
-/// Rédaction par l'IA des mentions manquantes ; `None` s'il n'en manque aucune.
-#[tauri::command]
-pub async fn assistant_format(
-    format: String,
-    type_contrat: String,
-    temps_partiel: bool,
-    aujourdhui: String,
-) -> Resultat<Option<PropositionFormatIaVue>> {
-    bloquant(move || {
-        let (_, dokos) = connexions::connecter(Profil::Rh)?;
-        let ia = connexions::connecter_ia()?;
-        let regles = regles()?;
-        let contexte = services::contexte_format(&regles, &type_contrat, temps_partiel);
-        services_ia::format(
-            &dokos,
-            &ia.1,
-            &ia.0.bases.contrats,
-            &regles,
-            &format,
-            &contexte,
-            services_ia::aujourdhui(&aujourdhui)?,
-            &dossier_documents()?,
-        )
-    })
-    .await
-}
-
-// --- Listes Excel ----------------------------------------------------------
 
 #[tauri::command]
 pub async fn listes_exportables() -> Resultat<Vec<ListeVue>> {
@@ -1004,10 +854,10 @@ mod tests {
 
     #[test]
     fn fichiers_hors_dossier_refuses() {
-        let racine = std::env::temp_dir().join(format!("dokos-assistant-test-{}", std::process::id()));
+        let racine = std::env::temp_dir().join(format!("dokos-asso-test-{}", std::process::id()));
         let dossier = racine.join("Dokos");
         std::fs::create_dir_all(dossier.join("modeles")).expect("dossier");
-        let dedans = dossier.join("contrat.pdf");
+        let dedans = dossier.join("facture.pdf");
         let dehors = racine.join("autre.pdf");
         std::fs::write(&dedans, b"%PDF").expect("fichier");
         std::fs::write(&dehors, b"%PDF").expect("fichier");

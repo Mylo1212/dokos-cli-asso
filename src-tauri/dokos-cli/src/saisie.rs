@@ -10,24 +10,36 @@ pub struct LigneSaisie {
     pub article: String,
     pub quantite: f64,
     pub livraison: Option<Date>,
+    /// Prix unitaire hors taxes imposé à la ligne ; `None` : prix de Dokos.
+    pub prix: Option<f64>,
 }
 
-/// `ARTICLE=QUANTITÉ` ou `ARTICLE=QUANTITÉ@DATE`, par exemple `repas=25@12/11/2026`.
-/// La quantité accepte la virgule décimale.
+/// `ARTICLE=QUANTITÉ`, avec en plus `*PRIX` (prix unitaire HT) et/ou `@DATE` (livraison d'une
+/// commande), dans cet ordre : `repas=25`, `repas=25*12,5`, `repas=25*12,5@12/11/2026`.
+/// La quantité et le prix acceptent la virgule décimale.
 pub fn ligne(texte: &str) -> Result<LigneSaisie, String> {
-    let format = "format attendu : ARTICLE=QUANTITÉ ou ARTICLE=QUANTITÉ@DATE";
+    let format = "format attendu : ARTICLE=QUANTITÉ, ARTICLE=QUANTITÉ*PRIX ou ARTICLE=QUANTITÉ*PRIX@DATE";
     let (article, reste) = texte.rsplit_once('=').ok_or_else(|| format!("« {texte} » : {format}"))?;
     let article = article.trim();
     if article.is_empty() {
         return Err(format!("« {texte} » : article manquant"));
     }
-    let (quantite, livraison) = match reste.split_once('@') {
-        Some((q, d)) => (q, Some(date(d)?)),
+    let (reste, livraison) = match reste.split_once('@') {
+        Some((r, d)) => (r, Some(date(d)?)),
+        None => (reste, None),
+    };
+    let (quantite, prix) = match reste.split_once('*') {
+        Some((q, p)) => {
+            let prix = nombre(p)
+                .filter(|p| (0.0..=dokos_core::vente::PRIX_MAX).contains(p))
+                .ok_or_else(|| format!("« {texte} » : prix « {} » illisible", p.trim()))?;
+            (q, Some(prix))
+        }
         None => (reste, None),
     };
     let quantite =
         nombre(quantite).ok_or_else(|| format!("« {texte} » : quantité « {} » illisible", quantite.trim()))?;
-    Ok(LigneSaisie { article: article.to_owned(), quantite, livraison })
+    Ok(LigneSaisie { article: article.to_owned(), quantite, livraison, prix })
 }
 
 pub fn date(texte: &str) -> Result<Date, String> {
@@ -41,31 +53,6 @@ pub fn date_heure(texte: &str) -> Result<DateHeure, String> {
 /// Nombre avec point ou virgule décimale.
 pub fn nombre(texte: &str) -> Option<f64> {
     texte.trim().replace(',', ".").parse().ok().filter(|n: &f64| n.is_finite())
-}
-
-pub fn heures(texte: &str) -> Result<f64, String> {
-    nombre(texte).ok_or_else(|| format!("« {texte} » : nombre d'heures illisible"))
-}
-
-/// `6/6/6/6/0/0/0` : heures du lundi au dimanche.
-pub fn repartition(texte: &str) -> Result<[f64; 7], String> {
-    let valeurs: Vec<f64> = texte
-        .split('/')
-        .map(|v| nombre(v).ok_or_else(|| format!("« {v} » : nombre d'heures illisible")))
-        .collect::<Result<_, _>>()?;
-    valeurs.try_into().map_err(|v: Vec<f64>| {
-        format!("{} valeurs au lieu de 7 (format : lundi/mardi/…/dimanche, par exemple 6/6/6/6/0/0/0)", v.len())
-    })
-}
-
-/// `champ=valeur`.
-pub fn champ(texte: &str) -> Result<(String, String), String> {
-    let (nom, valeur) = texte.split_once('=').ok_or_else(|| format!("« {texte} » : format attendu champ=valeur"))?;
-    let nom = nom.trim();
-    if nom.is_empty() {
-        return Err(format!("« {texte} » : nom de champ manquant"));
-    }
-    Ok((nom.to_owned(), valeur.trim().to_owned()))
 }
 
 /// `age!` (obligatoire) ou `allergies` (facultative).
@@ -92,15 +79,23 @@ mod tests {
 
     #[test]
     fn lignes_valides() {
-        assert_eq!(ligne("repas=25"), Ok(LigneSaisie { article: "repas".into(), quantite: 25.0, livraison: None }));
+        assert_eq!(
+            ligne("repas=25"),
+            Ok(LigneSaisie { article: "repas".into(), quantite: 25.0, livraison: None, prix: None })
+        );
         assert_eq!(
             ligne(" grande salle = 1 @ 13/11/2026"),
             Ok(LigneSaisie {
                 article: "grande salle".into(),
                 quantite: 1.0,
-                livraison: Some(date("2026-11-13").expect("date"))
+                livraison: Some(date("2026-11-13").expect("date")),
+                prix: None
             })
         );
+        let avec_prix = ligne("repas=25*12,5@13/11/2026").expect("prix");
+        assert_eq!((avec_prix.quantite, avec_prix.prix), (25.0, Some(12.5)));
+        assert!(avec_prix.livraison.is_some());
+        assert_eq!(ligne("repas=2*0").map(|l| l.prix), Ok(Some(0.0)));
         assert_eq!(ligne("café=2,5").map(|l| l.quantite), Ok(2.5));
         // Le dernier « = » sépare la quantité : l'article peut en contenir un.
         assert_eq!(ligne("formule A=B=3").map(|l| l.article), Ok("formule A=B".into()));
@@ -108,23 +103,24 @@ mod tests {
 
     #[test]
     fn lignes_invalides() {
-        for texte in ["repas", "=3", "repas=", "repas=beaucoup", "repas=3@demain", "repas=3@2026-02-30", "repas=inf"] {
+        for texte in [
+            "repas",
+            "=3",
+            "repas=",
+            "repas=beaucoup",
+            "repas=3@demain",
+            "repas=3@2026-02-30",
+            "repas=inf",
+            "repas=3*cher",
+            "repas=3*-1",
+            "repas=3*",
+        ] {
             assert!(ligne(texte).is_err(), "{texte}");
         }
     }
 
     #[test]
-    fn repartitions() {
-        assert_eq!(repartition("6/6/6/6/0/0/0"), Ok([6.0, 6.0, 6.0, 6.0, 0.0, 0.0, 0.0]));
-        assert_eq!(repartition("3,5/0/0/0/0/0/0").map(|r| r[0]), Ok(3.5));
-        assert!(repartition("6/6/6").is_err());
-        assert!(repartition("6/x/6/6/0/0/0").is_err());
-    }
-
-    #[test]
-    fn champs_et_questions() {
-        assert_eq!(champ("motif_cdd = Surcroît d'activité"), Ok(("motif_cdd".into(), "Surcroît d'activité".into())));
-        assert!(champ("=x").is_err());
+    fn questions() {
         assert_eq!(question("age!"), Ok(Question { champ: "age".into(), obligatoire: true }));
         assert_eq!(question("allergies"), Ok(Question { champ: "allergies".into(), obligatoire: false }));
         assert!(question("!").is_err());

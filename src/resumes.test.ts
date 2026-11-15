@@ -37,6 +37,15 @@ describe("résumé d'une vente", () => {
     expect(r).toEqual({ lignes: 3, total: 100, devise: "EUR", horsTotal: 2 });
   });
 
+  it("accepte un prix saisi sans devise connue", () => {
+    const r = resumeVente([
+      { article: "A", quantite: "2", prix: prix(10, "EUR") },
+      { article: "B", quantite: "1", prix: prix(5, "") },
+    ]);
+    expect(r).toEqual({ lignes: 2, total: 25, devise: "EUR", horsTotal: 0 });
+    expect(resumeVente([{ article: "B", quantite: "1", prix: prix(5, "") }])).toMatchObject({ total: 5, devise: "" });
+  });
+
   it("n'annonce aucun total sans prix connu, et ne mélange pas les devises", () => {
     expect(resumeVente([{ article: "NUIT", quantite: "2", prix: null }])).toEqual({
       lignes: 1,

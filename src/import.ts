@@ -3,7 +3,7 @@
 
 import { api, type AnalyseVue, type CasVue, type ChoixImport, type LigneImportVue } from "./api";
 import { alerte, alerteErreur, bouton, caseACocher, champ, h, lienDokos, lienFichier, occupe, tableau } from "./dom";
-import { perimerSuivi } from "./donnees";
+import { perimerSuivi, viderListes } from "./donnees";
 
 export function initialiserImport(panneau: HTMLElement): void {
   let cas: CasVue | null = null;
@@ -197,7 +197,10 @@ export function initialiserImport(panneau: HTMLElement): void {
       ),
     );
     if (!r) return;
-    if (r.crees > 0) perimerSuivi();
+    if (r.crees > 0) {
+      perimerSuivi();
+      viderListes();
+    }
     const lignes = r.documents.map((d) => [
       h(
         "span",

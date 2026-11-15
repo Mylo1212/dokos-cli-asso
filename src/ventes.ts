@@ -12,10 +12,18 @@ import {
 } from "./api";
 import { choixCandidats, enregistrerPreRemplissage } from "./assistant";
 import { creerCatalogue } from "./catalogue";
-import { alerte, aujourdhui, bouton, champ, h, lienDokos, montant, occupe, recherche, saisie } from "./dom";
-import { perimerSuivi, prixIndicatif, recherches } from "./donnees";
+import { alerte, aujourdhui, bouton, champ, h, lienDokos, listeDeroulante, montant, occupe, saisie } from "./dom";
+import { listes, perimerSuivi, prixIndicatif } from "./donnees";
 import { ouvrirOnglet } from "./etat";
-import { LIBELLES_VENTE, demandeVente, livraisonPassee, pluriel, resumeVente, type LigneSaisie } from "./valeurs";
+import {
+  LIBELLES_VENTE,
+  demandeVente,
+  livraisonPassee,
+  pluriel,
+  prixDeLigne,
+  resumeVente,
+  type LigneSaisie,
+} from "./valeurs";
 import { creerSectionModele } from "./ventes-modele";
 
 interface Ligne {
@@ -23,6 +31,8 @@ interface Ligne {
   article: ArticleVue | null;
   quantite: HTMLInputElement;
   livraison: HTMLInputElement;
+  /** Prix unitaire HT saisi ; vide : prix de Dokos. */
+  prixSaisi: HTMLInputElement;
   prix: HTMLSpanElement;
   /** Prix indicatif de l'article choisi, s'il est connu. */
   prixConnu: { prix: number; devise: string } | null;
@@ -88,9 +98,9 @@ export function initialiserVentes(panneau: HTMLElement): void {
     },
   });
 
-  const choixClient = recherche<ClientVue>({
-    placeholder: "Nom ou identifiant du client",
-    chercher: recherches.clients,
+  const choixClient = listeDeroulante<ClientVue>({
+    placeholder: "Choisir un client…",
+    lire: () => listes.clients(),
     libelle: (c) => c.nom || c.id,
     identifiant: (c) => c.id,
     surChoix: (c) => {
@@ -129,6 +139,13 @@ export function initialiserVentes(panneau: HTMLElement): void {
   const ajouterLigne = () => {
     const quantite = saisie({ type: "number", min: "0", step: "any", value: "1", inputmode: "decimal" });
     const livraison = saisie({ type: "date" });
+    const prixSaisi = saisie({
+      type: "number",
+      min: "0",
+      step: "any",
+      inputmode: "decimal",
+      placeholder: "Prix de Dokos",
+    });
     const aide = h("div", { class: "ligne-aide" });
     const prix = h("span", { class: "prix-indicatif" });
     const ligne: Ligne = {
@@ -136,6 +153,7 @@ export function initialiserVentes(panneau: HTMLElement): void {
       article: null,
       quantite,
       livraison,
+      prixSaisi,
       prix,
       prixConnu: null,
       choix: { choisir: () => {}, saisir: () => {} },
@@ -144,11 +162,14 @@ export function initialiserVentes(panneau: HTMLElement): void {
     const montrerPrix = () => {
       const p = ligne.prixConnu;
       prix.textContent = p ? `${montant(p.prix, p.devise)} indicatif` : "";
+      // Le prix indicatif sert d'indice dans le champ resté vide.
+      prixSaisi.placeholder = p ? String(p.prix).replace(".", ",") : "Prix de Dokos";
       majResume();
     };
-    const choixArticle = recherche<ArticleVue>({
-      placeholder: "Article",
-      chercher: (texte) => recherches.articles(texte, catalogue.groupeChoisi()),
+    const choixArticle = listeDeroulante<ArticleVue>({
+      placeholder: "Choisir un article…",
+      lire: () => listes.articles(catalogue.groupeChoisi()),
+      cle: () => catalogue.groupeChoisi() ?? "",
       libelle: (a) => a.libelle || a.code,
       identifiant: (a) => a.code,
       surChoix: (a) => {
@@ -178,9 +199,11 @@ export function initialiserVentes(panneau: HTMLElement): void {
       majResume();
     });
     quantite.addEventListener("input", majResume);
+    prixSaisi.addEventListener("input", majResume);
     ligne.element.append(
       champ("Article", choixArticle.racine),
       champ("Quantité", quantite),
+      champ("Prix unitaire HT", prixSaisi),
       champ("Livraison (si différente)", livraison),
       retirer,
       aide,
@@ -209,7 +232,7 @@ export function initialiserVentes(panneau: HTMLElement): void {
     if (source !== "libre") choisirSource("libre");
     if (p.typeVente) choisirType(p.typeVente);
     if (p.client.statut === "trouve" && p.client.valeur) choixClient.choisir(p.client.valeur);
-    else if (p.client.statut === "introuvable") choixClient.saisir(p.client.texte);
+    else if (p.client.statut === "introuvable") choixClient.saisir(p.client.texte, false);
     else choixClient.choisir(null);
     const candidatsClient = choixCandidats(
       "Client",
@@ -231,7 +254,7 @@ export function initialiserVentes(panneau: HTMLElement): void {
         ligne.livraison.value = proposee.livraison ?? "";
         const choix = proposee.article;
         if (choix.statut === "trouve" && choix.valeur) ligne.choix.choisir(choix.valeur);
-        else ligne.choix.saisir(proposee.texte, choix.statut === "introuvable");
+        else ligne.choix.saisir(proposee.texte, false);
         const candidats = choixCandidats(
           "Article",
           choix,
@@ -260,7 +283,11 @@ export function initialiserVentes(panneau: HTMLElement): void {
     ];
     if (source === "libre") {
       const r = resumeVente(
-        lignes.map((l) => ({ article: l.article?.code ?? null, quantite: l.quantite.value, prix: l.prixConnu })),
+        lignes.map((l) => ({
+          article: l.article?.code ?? null,
+          quantite: l.quantite.value,
+          prix: prixDeLigne(l.prixSaisi.value, l.prixConnu),
+        })),
       );
       morceaux.push(r.lignes === 0 ? "aucune ligne" : pluriel(r.lignes, "ligne"));
       if (r.total !== null) {
@@ -283,7 +310,7 @@ export function initialiserVentes(panneau: HTMLElement): void {
     carteLignes.hidden = !libre;
     sectionModele.carte.hidden = libre;
     noteCreation.textContent = libre
-      ? "Aucun prix n'est saisi ici : Dokos applique ses listes de prix et ses taxes."
+      ? "Prix vide : Dokos applique ses listes de prix. Dès qu'un prix est saisi, les règles de prix de Dokos (remises) ne s'appliquent plus à aucune ligne du document. Les taxes sont toujours calculées par Dokos."
       : "";
     noteCreation.hidden = !libre;
     if (type.echeance) libelleEcheance.firstChild!.textContent = type.echeance;
@@ -303,6 +330,7 @@ export function initialiserVentes(panneau: HTMLElement): void {
       article: l.article?.code ?? null,
       quantite: l.quantite.value,
       livraison: l.livraison.value,
+      prix: l.prixSaisi.value,
     }));
     return demandeVente({
       typeVente,

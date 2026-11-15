@@ -80,20 +80,7 @@ fn hypotheses_sur_les_doctypes() {
         ),
         ("Event Registration", &["event", "first_name", "last_name", "email", "mobile_number"]),
         ("Web Form", &["route", "doc_type", "published", "web_form_fields"]),
-        ("Employee", &["first_name", "last_name", "gender", "date_of_birth", "date_of_joining", "company"]),
-        (
-            "Employment Contract",
-            &[
-                "employee",
-                "contract_type",
-                "designation",
-                "date_of_joining",
-                "relieving_date",
-                "weekly_working_hours",
-                "monday",
-                "sunday",
-            ],
-        ),
+        ("Employment Contract", &["employee", "employee_name", "contract_type", "date_of_joining", "relieving_date"]),
     ];
     let mut manquants = Vec::new();
     for (doctype, champs) in attendus {

@@ -16,7 +16,7 @@ const CONSERVATION_JOURS: u64 = 30;
 const LIGNES_DIAGNOSTIC: usize = 60;
 pub const FICHIER_ACTIONS: &str = "journal-actions.csv";
 
-/// Dossier des journaux : `%APPDATA%\dokos-cli\logs`.
+/// Dossier des journaux : `%APPDATA%\dokos-cli-asso\logs`.
 pub fn dossier_journaux() -> Result<PathBuf, ErreurConfig> {
     let dossier = dossier()?.join("logs");
     fs::create_dir_all(&dossier).map_err(|e| ErreurConfig::Fichier(format!("{} : {e}", dossier.display())))?;
@@ -36,8 +36,7 @@ pub fn initialiser_journal(appli: &str) -> Result<PathBuf, ErreurConfig> {
         .with_target("dokos_config", tracing::Level::DEBUG)
         .with_target("dokos_import", tracing::Level::DEBUG)
         .with_target("assistant_core", tracing::Level::DEBUG)
-        .with_target("conformite", tracing::Level::DEBUG)
-        .with_target("dokos_assistant", tracing::Level::DEBUG)
+        .with_target("dokos_asso", tracing::Level::DEBUG)
         .with_target("dokos_cli", tracing::Level::DEBUG);
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
@@ -82,7 +81,7 @@ fn dernieres_lignes() -> String {
 /// sans secret, dernières lignes du journal.
 pub fn diagnostic(appli: &str) -> String {
     let mut texte = format!(
-        "Dokos Assistant — diagnostic\nAppli : {appli} {}\nSystème : {} {}\nDate (UTC) : {}\n",
+        "Dokos Asso — diagnostic\nAppli : {appli} {}\nSystème : {} {}\nDate (UTC) : {}\n",
         env!("CARGO_PKG_VERSION"),
         std::env::consts::OS,
         std::env::consts::ARCH,
@@ -115,15 +114,6 @@ pub fn diagnostic(appli: &str) -> String {
         }
         Ok(None) => texte.push_str("Aucune configuration enregistrée.\n"),
         Err(e) => texte.push_str(&format!("Configuration illisible : {e}\n")),
-    }
-    match crate::charger_regles() {
-        Ok((regles, chemin)) => texte.push_str(&format!(
-            "Mentions : {} ({}) — {}\n",
-            regles.version,
-            chemin.map_or("liste livrée".to_owned(), |c| c.display().to_string()),
-            if regles.est_validee() { "validée" } else { "NON validée" }
-        )),
-        Err(e) => texte.push_str(&format!("Mentions : {e}\n")),
     }
     texte.push_str("\n--- Dernières lignes du journal ---\n");
     texte.push_str(&dernieres_lignes());
@@ -214,7 +204,7 @@ mod tests {
     #[test]
     fn diagnostic_sans_secret() {
         let texte = diagnostic("test");
-        assert!(texte.starts_with("Dokos Assistant — diagnostic"));
+        assert!(texte.starts_with("Dokos Asso — diagnostic"));
         assert!(texte.contains("Dernières lignes du journal"));
     }
 }

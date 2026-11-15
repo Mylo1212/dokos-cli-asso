@@ -423,16 +423,6 @@ impl<T: Transport> Dokos<T> {
         self.executer(&Requete::get(format!("/api/method/{methode}")).avec_parametres(parametres))
     }
 
-    /// Appel en lecture d'une méthode qui renvoie un fichier (PDF…).
-    pub(crate) fn telecharger(&self, methode: &str, parametres: &[(&str, &str)]) -> Result<Vec<u8>, DokosError> {
-        let requete = Requete::get(format!("/api/method/{methode}")).avec_parametres(parametres).longue();
-        let reponse = self.transport.envoyer(&requete)?;
-        if !(200..300).contains(&reponse.statut) {
-            return Err(DokosError::depuis_reponse(reponse.statut, &reponse.texte()));
-        }
-        Ok(reponse.corps)
-    }
-
     fn executer<D: DeserializeOwned>(&self, requete: &Requete) -> Result<D, DokosError> {
         decoder(&self.transport.envoyer(requete)?)
     }

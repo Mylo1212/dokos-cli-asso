@@ -12,7 +12,6 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
-conformite.workspace = true
 dokos-config.workspace = true
 dokos-core.workspace = true
 dokos-import.workspace = true

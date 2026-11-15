@@ -48,7 +48,7 @@ fn construire(cas: Cas, referentiel: &Referentiel, contexte: &ContexteModele) ->
     classeur.set_properties(
         &DocProperties::new()
             .set_title(format!("Modèle d'import — {}", cas.libelle()))
-            .set_author("Dokos Assistant")
+            .set_author("Dokos Asso")
             .set_comment(format!(
                 "Modèle {} version {VERSION_MODELE}, généré le {} depuis {}",
                 cas.nom(),
@@ -140,9 +140,7 @@ fn mode_emploi(
             match colonne.genre {
                 Genre::Texte => "texte",
                 Genre::Nombre => "nombre",
-                Genre::Entier => "nombre entier",
                 Genre::Date => "date",
-                Genre::DateHeure => "date et heure",
                 Genre::OuiNon => "Oui / Non",
             },
             if colonne.aide.is_empty() { String::new() } else { format!(". {}", colonne.aide) }
@@ -196,25 +194,23 @@ fn donnees(
     let entete = Format::new().set_bold().set_background_color(Color::RGB(0xE3EFE9)).set_locked();
     let exemple_format = Format::new().set_italic().set_font_color(Color::RGB(0x7A7A7A));
     let date = Format::new().set_num_format("dd/mm/yyyy");
-    let date_heure = Format::new().set_num_format("dd/mm/yyyy hh:mm");
     let nombre = Format::new().set_num_format("0.##");
     for (i, colonne) in colonnes.iter().enumerate() {
         let c = i as u16;
         feuille.write_string_with_format(0, c, colonne.entete(), &entete)?;
         let largeur = match colonne.genre {
-            Genre::Date | Genre::DateHeure => 16,
-            Genre::Nombre | Genre::Entier | Genre::OuiNon => 11,
+            Genre::Date => 16,
+            Genre::Nombre | Genre::OuiNon => 11,
             Genre::Texte => (colonne.nom.chars().count() as f64 + 10.0).clamp(14.0, 34.0) as u16,
         };
         match colonne.genre {
             Genre::Date => feuille.set_column_format(c, &date)?,
-            Genre::DateHeure => feuille.set_column_format(c, &date_heure)?,
-            Genre::Nombre | Genre::Entier => feuille.set_column_format(c, &nombre)?,
+            Genre::Nombre => feuille.set_column_format(c, &nombre)?,
             Genre::Texte | Genre::OuiNon => feuille,
         };
         feuille.set_column_width(c, f64::from(largeur))?;
         if !colonne.aide.is_empty() {
-            let note = Note::new(colonne.aide.as_str()).set_author("Dokos Assistant").add_author_prefix(false);
+            let note = Note::new(colonne.aide.as_str()).set_author("Dokos Asso").add_author_prefix(false);
             feuille.insert_note(0, c, &note)?;
         }
         if let Some(valeur) = exemple.get(i) {
@@ -256,7 +252,7 @@ fn marque(
 ) -> Result<(), XlsxError> {
     feuille.set_name(ONGLET_MARQUE)?;
     let mut lignes = vec![
-        ("signature", "dokos-assistant".to_owned()),
+        ("signature", "dokos-asso".to_owned()),
         ("cas", cas.nom().to_owned()),
         ("version", VERSION_MODELE.to_string()),
         ("genere", contexte.date.clone()),
@@ -333,6 +329,6 @@ mod tests {
 
     #[test]
     fn nom_du_fichier() {
-        assert_eq!(nom_fichier_modele(Cas::Evenements, &Referentiel::default()), "modele-evenements.xlsx");
+        assert_eq!(nom_fichier_modele(Cas::Clients, &Referentiel::default()), "modele-clients.xlsx");
     }
 }

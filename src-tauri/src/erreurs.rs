@@ -97,16 +97,6 @@ impl From<dokos_import::ErreurImport> for ErreurVue {
     }
 }
 
-impl From<conformite::dokos::ErreurVerification> for ErreurVue {
-    fn from(e: conformite::dokos::ErreurVerification) -> Self {
-        use conformite::dokos::ErreurVerification as V;
-        match e {
-            V::Dokos(d) => d.into(),
-            V::FormatNonAnalysable(_) | V::MauvaisDocType { .. } => Self::validation(e.to_string()),
-        }
-    }
-}
-
 impl From<dokos_core::export::ErreurExport> for ErreurVue {
     fn from(e: dokos_core::export::ErreurExport) -> Self {
         use dokos_core::export::ErreurExport as E;
@@ -161,8 +151,6 @@ erreurs_de_validation!(
     dokos_core::vente::ErreurVente,
     dokos_core::evenement::ErreurEvenement,
     dokos_core::formulaire::ErreurFormulaire,
-    dokos_core::employe::ErreurEmploye,
-    dokos_core::contrat::ErreurContrat,
     dokos_core::article::ErreurArticle,
     dokos_core::clientele::ErreurClient,
     dokos_core::inscription::ErreurInscription,

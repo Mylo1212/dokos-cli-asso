@@ -34,7 +34,7 @@ pub fn preparer<T: Transport>(
     let mut lignes_vente = Vec::with_capacity(lignes.len());
     for saisie in lignes {
         let article = unique("article", &saisie.article, trouver_article(dokos, &saisie.article)?)?;
-        lignes_vente.push(LigneVente::new(&article.code, saisie.quantite, saisie.livraison)?);
+        lignes_vente.push(LigneVente::new(&article.code, saisie.quantite, saisie.livraison)?.avec_prix(saisie.prix)?);
         articles.push(article);
     }
     let document =
@@ -84,14 +84,22 @@ pub fn brouillon<T: Transport>(dokos: &Dokos<T>, societe: Option<&str>, demande:
             TypeVente::Commande => format!(" — {}", ligne.livraison().unwrap_or(demande.date)),
             TypeVente::Devis | TypeVente::Facture => String::new(),
         };
+        let prix = ligne.prix().map_or(String::new(), |p| format!(" à {p:.2} HT"));
         println!(
-            "  {:>6}{unite} × {} ({}){livraison}",
+            "  {:>6}{unite} × {} ({}){prix}{livraison}",
             saisie::quantite(ligne.quantite()),
             article.libelle,
             article.code
         );
     }
-    println!("Prix et taxes : calculés par Dokos.");
+    if document.lignes().iter().any(|l| l.prix().is_some()) {
+        println!(
+            "Prix saisis : les règles de prix de Dokos (remises) ne s'appliquent à aucune ligne ; \
+             les lignes sans prix gardent celui de la liste de prix. Taxes : calculées par Dokos."
+        );
+    } else {
+        println!("Prix et taxes : calculés par Dokos.");
+    }
 
     if demande.simulation {
         let doublons = chercher_doublons(dokos, document)?;
@@ -161,7 +169,7 @@ mod tests {
     use super::*;
 
     fn saisie(article: &str, quantite: f64) -> LigneSaisie {
-        LigneSaisie { article: article.into(), quantite, livraison: None }
+        LigneSaisie { article: article.into(), quantite, livraison: None, prix: None }
     }
 
     fn jour() -> Date {
@@ -210,6 +218,21 @@ mod tests {
         let requetes = faux.requetes();
         assert_eq!(requetes.len(), 3);
         assert!(requetes.iter().all(|r| r.methode == Methode::Get));
+    }
+
+    #[test]
+    fn prix_saisi_envoye_a_dokos() {
+        let faux = FauxTransport::new();
+        faux.repondre_json(200, &json!({"data": [{"name": "CUST-2", "customer_name": "Mairie de Crest"}]}));
+        faux.repondre_json(200, &json!({"data": [{"name": "REPAS", "item_name": "Repas"}]}));
+        faux.repondre_json(200, &json!({"data": [{"name": "SALLE-G", "item_name": "Grande salle"}]}));
+        let lignes = [LigneSaisie { prix: Some(12.5), ..saisie("repas", 25.0) }, saisie("grande salle", 1.0)];
+        let preparation =
+            preparer(&Dokos::new(&faux), TypeVente::Facture, "mairie", jour(), None, &lignes, None).expect("facture");
+        let corps = preparation.document.corps();
+        assert_eq!(corps["items"][0]["rate"], 12.5);
+        assert!(corps["items"][1].get("rate").is_none());
+        assert_eq!(corps["ignore_pricing_rule"], 1);
     }
 
     #[test]

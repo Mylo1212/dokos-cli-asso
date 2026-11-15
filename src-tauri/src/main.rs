@@ -1,5 +1,5 @@
-//! Dokos Assistant : devis, commandes, factures, formulaires, contrats,
-//! catalogue, imports de tableaux, listes Excel et suivi.
+//! Dokos Asso : devis, commandes, factures, formulaires, catalogue,
+//! imports de tableaux, exports Excel et suivi.
 //!
 //! L'interface ne fait que proposer des demandes ; l'assistant IA (Open
 //! WebUI) ne fait que pré-remplir les formulaires ; Rust valide tout et
@@ -34,6 +34,8 @@ fn main() {
             commandes::tester_profil,
             commandes::etat_connexions,
             commandes::diagnostic,
+            commandes::liste_clients,
+            commandes::liste_articles,
             commandes::chercher_clients,
             commandes::chercher_articles,
             commandes::verifier_vente,
@@ -56,6 +58,7 @@ fn main() {
             commandes::exporter_inscrits,
             commandes::alertes_rh,
             commandes::factures_en_retard,
+            commandes::references_export,
             commandes::listes_exportables,
             commandes::assistant_liste,
             commandes::exporter_liste,
@@ -68,29 +71,19 @@ fn main() {
             commandes::verifier_evenement,
             commandes::creer_evenement,
             commandes::publier_evenement,
-            commandes::listes_rh,
-            commandes::chercher_employes,
-            commandes::creer_employe,
-            commandes::verifier_contrat,
-            commandes::creer_contrat,
-            commandes::verifier_format,
-            commandes::enregistrer_proposition,
-            commandes::pdf_contrat,
             commandes::etat_ia,
             commandes::enregistrer_ia,
             commandes::tester_ia,
             commandes::discuter,
             commandes::assistant_vente,
             commandes::assistant_evenement,
-            commandes::assistant_contrat,
-            commandes::assistant_format,
             commandes::ouvrir_lien,
             commandes::ouvrir_fichier,
         ])
         .run(tauri::generate_context!());
     if let Err(erreur) = resultat {
         tracing::error!("démarrage impossible : {erreur}");
-        eprintln!("Dokos Assistant n'a pas pu démarrer : {erreur}");
+        eprintln!("Dokos Asso n'a pas pu démarrer : {erreur}");
         std::process::exit(1);
     }
 }

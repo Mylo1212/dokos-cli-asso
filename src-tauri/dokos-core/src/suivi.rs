@@ -1,16 +1,20 @@
 //! Suivi en lecture seule : factures en retard de paiement, échéances de
-//! contrats. Les relances et les avenants restent dans Dokos.
+//! contrats de travail. Les relances et les avenants restent dans Dokos.
 
 use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
 use crate::client::{Dokos, Filtre, Liste};
-use crate::contrat::DOCTYPE_CONTRAT;
 use crate::date::Date;
 use crate::erreur::DokosError;
 use crate::transport::Transport;
 use crate::types::{DOCTYPE_FACTURE, texte_ou_vide};
+
+/// Contrats de travail (application RH de Dokos), lus seulement pour les échéances.
+pub const DOCTYPE_CONTRAT: &str = "Employment Contract";
+/// Types de contrat à durée déterminée, dont la fin doit être renseignée.
+pub const TYPES_CDD: &[&str] = &["CDD"];
 
 pub const IMPAYEES_MAX: u32 = 200;
 pub const CONTRATS_MAX: u32 = 200;
@@ -113,22 +117,21 @@ fn liste_fins(aujourdhui: Date, jours: i64) -> Result<Liste, DokosError> {
         .limite(CONTRATS_MAX))
 }
 
-/// Contrats d'un des types donnés (les CDD du fichier des mentions) sans date de fin.
-pub fn contrats_sans_fin<T: Transport>(dokos: &Dokos<T>, types: &[String]) -> Result<Vec<EcheanceContrat>, DokosError> {
+/// Contrats d'un des types donnés (voir [`TYPES_CDD`]) sans date de fin.
+pub fn contrats_sans_fin<T: Transport>(dokos: &Dokos<T>, types: &[&str]) -> Result<Vec<EcheanceContrat>, DokosError> {
     match liste_sans_fin(types) {
         Some(liste) => dokos.lister(DOCTYPE_CONTRAT, &liste),
         None => Ok(Vec::new()),
     }
 }
 
-fn liste_sans_fin(types: &[String]) -> Option<Liste> {
+fn liste_sans_fin(types: &[&str]) -> Option<Liste> {
     if types.is_empty() {
         return None;
     }
-    let types: Vec<&str> = types.iter().map(String::as_str).collect();
     Some(
         Liste::new(CHAMPS_ECHEANCE)
-            .filtre(Filtre::parmi("contract_type", &types))
+            .filtre(Filtre::parmi("contract_type", types))
             .filtre(Filtre::non_renseigne("relieving_date"))
             .ordre("date_of_joining desc")
             .limite(CONTRATS_MAX),
@@ -170,7 +173,7 @@ pub fn echeances_de_contrats<T: Transport>(
     dokos: &Dokos<T>,
     aujourdhui: Date,
     horizon: i64,
-    types_cdd: &[String],
+    types_cdd: &[&str],
     recent: i64,
 ) -> Result<Echeances, DokosError> {
     let fins = liste_fins(aujourdhui, horizon)?;
@@ -234,7 +237,7 @@ mod tests {
         let dokos = Dokos::new(&faux);
         let fins = contrats_qui_se_terminent(&dokos, jour(), 30).expect("fins");
         assert_eq!(fins[0].id, "C-1");
-        assert!(contrats_sans_fin(&dokos, &["CDD".to_owned()]).expect("sans fin").is_empty());
+        assert!(contrats_sans_fin(&dokos, TYPES_CDD).expect("sans fin").is_empty());
         assert!(contrats_sans_fin(&dokos, &[]).expect("aucun type").is_empty());
         assert_eq!(contrats_recents(&dokos, jour(), 60).expect("récents")[0].id, "C-2");
         let requetes = faux.requetes();

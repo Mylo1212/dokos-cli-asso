@@ -1,8 +1,7 @@
 //! Import de tableaux (Excel ou CSV) vérifiés, et modèles générés par l'outil.
 //!
-//! - [`cas`] : les cas d'usage (factures, commandes, devis, inscriptions,
-//!   articles, employés, clients, programme d'événements, ventes à partir
-//!   d'un modèle « Template ») et leurs colonnes.
+//! - [`cas`] : les cas d'usage (factures, factures à partir d'un modèle
+//!   « Template », articles, clients) et leurs colonnes.
 //! - [`referentiel`] : les listes de valeurs valides lues dans Dokos, jointes
 //!   au modèle et utilisées à l'import.
 //! - [`modele`] : génération du classeur modèle (mode d'emploi, données,
@@ -13,12 +12,14 @@
 //!   résolution exacte (identifiant ou nom), puis les documents sont vérifiés
 //!   (doublons) et créés, tout ou rien par défaut.
 //! - [`rapport`] : fichier résultat (copie du tableau avec statut et document).
+//! - [`export`] : écriture d'une liste lue dans Dokos en classeur Excel.
 //!
 //! Rien n'est écrit dans Dokos tant qu'une ligne pose problème, sauf si
 //! l'utilisateur demande explicitement « seulement les documents prêts ».
 
 pub mod analyse;
 pub mod cas;
+pub mod export;
 pub mod lecture;
 pub mod modele;
 pub mod rapport;
@@ -28,7 +29,6 @@ use std::fmt;
 
 use dokos_core::DokosError;
 use dokos_core::client::Dokos;
-use dokos_core::date::Date;
 use dokos_core::modele_vente::{ErreurModele, lire_modele, verifier_version};
 use dokos_core::transport::Transport;
 
@@ -80,10 +80,9 @@ impl From<DokosError> for ErreurImport {
 pub fn referentiel_pour_generer<T: Transport>(
     dokos: &Dokos<T>,
     cas: Cas,
-    aujourdhui: Date,
     modele: Option<&str>,
 ) -> Result<Referentiel, ErreurImport> {
-    let mut referentiel = Referentiel::lire(dokos, cas, aujourdhui)?;
+    let mut referentiel = Referentiel::lire(dokos, cas)?;
     if let Some(type_vente) = cas.type_modele() {
         let id = modele.map(str::trim).filter(|m| !m.is_empty()).ok_or_else(|| {
             ErreurImport::Modele("choisissez le modèle Dokos (étiquette « Template ») à copier".into())
@@ -99,9 +98,8 @@ pub fn referentiel_pour_fichier<T: Transport>(
     dokos: &Dokos<T>,
     cas: Cas,
     tableau: &Tableau,
-    aujourdhui: Date,
 ) -> Result<Referentiel, ErreurImport> {
-    let mut referentiel = Referentiel::lire(dokos, cas, aujourdhui)?;
+    let mut referentiel = Referentiel::lire(dokos, cas)?;
     if let Some(type_vente) = cas.type_modele() {
         let marque = tableau.marque.as_ref();
         let id = marque.and_then(|m| m.modele.as_deref()).ok_or_else(|| {
@@ -132,6 +130,7 @@ pub use referentiel::Referentiel;
 
 #[cfg(test)]
 mod tests {
+    use dokos_core::date::Date;
     use dokos_core::transport::Methode;
     use dokos_core::transport::faux::FauxTransport;
     use serde_json::json;
@@ -153,7 +152,7 @@ mod tests {
         document_modele(faux, modifie);
         faux.repondre_json(
             200,
-            &json!({"docs": [{"name": "Quotation", "fields": [
+            &json!({"docs": [{"name": "Sales Invoice", "fields": [
                 {"fieldname": "custom_date_arrivee", "fieldtype": "Date"},
                 {"fieldname": "custom_date_depart", "fieldtype": "Date"},
             ]}]}),
@@ -162,11 +161,11 @@ mod tests {
 
     /// Lecture du modèle seul : la structure du DocType est déjà en mémoire du client.
     fn document_modele(faux: &FauxTransport, modifie: &str) {
-        faux.repondre_json(200, &json!({"data": [{"name": "SAL-QTN-0007", "_user_tags": ",Template"}]}));
+        faux.repondre_json(200, &json!({"data": [{"name": "ACC-SINV-0007", "_user_tags": ",Template"}]}));
         faux.repondre_json(
             200,
             &json!({"data": {
-                "name": "SAL-QTN-0007", "title": "Séminaire", "docstatus": 0, "currency": "EUR",
+                "name": "ACC-SINV-0007", "title": "Séminaire", "docstatus": 0, "currency": "EUR",
                 "modified": modifie, "taxes_and_charges": "TVA 10 %",
                 "items": [
                     {"name": "l1", "item_code": "REPAS", "item_name": "Repas complet", "qty": 20, "rate": 18.5, "uom": "Unité"},
@@ -183,8 +182,8 @@ mod tests {
         clients(&faux);
         modele(&faux, "2026-10-01 09:00:00");
         let referentiel =
-            referentiel_pour_generer(&dokos, Cas::DevisModele, jour(), Some("SAL-QTN-0007")).expect("référentiel");
-        let colonnes = Cas::DevisModele.colonnes(&referentiel);
+            referentiel_pour_generer(&dokos, Cas::FacturesModele, Some("ACC-SINV-0007")).expect("référentiel");
+        let colonnes = Cas::FacturesModele.colonnes(&referentiel);
         let noms: Vec<&str> = colonnes.iter().map(|c| c.nom.as_str()).collect();
         assert_eq!(
             noms,
@@ -192,12 +191,12 @@ mod tests {
         );
         let contexte =
             ContexteModele { url_dokos: "https://dokos.test".into(), date: jour().to_string(), societe: None };
-        let octets = generer_modele(Cas::DevisModele, &referentiel, &contexte).expect("modèle");
+        let octets = generer_modele(Cas::FacturesModele, &referentiel, &contexte).expect("modèle");
         let mut tableau = lire_octets(&octets, "xlsx").expect("lecture");
         let marque = tableau.marque.clone().expect("marque");
-        assert_eq!(marque.modele.as_deref(), Some("SAL-QTN-0007"));
+        assert_eq!(marque.modele.as_deref(), Some("ACC-SINV-0007"));
         assert_eq!(marque.modele_modifie.as_deref(), Some("2026-10-01 09:00:00"));
-        tableau.verifier_marque(Cas::DevisModele).expect("marque du cas");
+        tableau.verifier_marque(Cas::FacturesModele).expect("marque du cas");
 
         // Deux lignes saisies : une complète, une sans aucune quantité.
         tableau.lignes = vec![
@@ -206,10 +205,10 @@ mod tests {
         ];
         clients(&faux);
         document_modele(&faux, "2026-10-01 09:00:00");
-        let referentiel = referentiel_pour_fichier(&dokos, Cas::DevisModele, &tableau, jour()).expect("référentiel");
+        let referentiel = referentiel_pour_fichier(&dokos, Cas::FacturesModele, &tableau).expect("référentiel");
         // « CUST-2 » est reconnu dans la liste des clients du référentiel : aucune recherche.
         let options = Options { aujourdhui: Some(jour()), ..Options::default() };
-        let mut analyse = analyser(&dokos, Cas::DevisModele, &tableau, &referentiel, &options).expect("analyse");
+        let mut analyse = analyser(&dokos, Cas::FacturesModele, &tableau, &referentiel, &options).expect("analyse");
         assert_eq!(analyse.documents.len(), 2);
         assert!(analyse.documents[0].pret());
         assert!(analyse.documents[0].libelle.contains("Mairie de Crest"), "{}", analyse.documents[0].libelle);
@@ -220,7 +219,7 @@ mod tests {
         faux.repondre_json(200, &json!({"data": []})); // doublons, à la création
         faux.repondre_json(
             200,
-            &json!({"data": {"name": "SAL-QTN-0050", "docstatus": 0, "grand_total": 610.5, "currency": "EUR"}}),
+            &json!({"data": {"name": "ACC-SINV-0050", "docstatus": 0, "grand_total": 610.5, "currency": "EUR"}}),
         );
         let resultats = creer(
             &dokos,
@@ -232,8 +231,8 @@ mod tests {
         assert_eq!(resultats[1].statut, StatutCreation::Ignore);
         let post = faux.requetes().into_iter().find(|r| r.methode == Methode::Post).expect("POST");
         let corps = post.corps.expect("corps");
-        assert_eq!(corps["party_name"], "CUST-2");
-        assert_eq!(corps["transaction_date"], "2026-11-05");
+        assert_eq!(corps["customer"], "CUST-2");
+        assert_eq!(corps["posting_date"], "2026-11-05");
         assert_eq!(corps["custom_date_depart"], "2026-12-03");
         assert_eq!(corps["taxes_and_charges"], "TVA 10 %");
         assert_eq!(corps["items"].as_array().map(Vec::len), Some(1));
@@ -250,23 +249,23 @@ mod tests {
         let dokos = Dokos::new(&faux);
         let tableau = Tableau {
             marque: Some(Marque {
-                cas: Cas::DevisModele,
+                cas: Cas::FacturesModele,
                 version: VERSION_MODELE,
                 dokos: String::new(),
-                modele: Some("SAL-QTN-0007".into()),
+                modele: Some("ACC-SINV-0007".into()),
                 modele_modifie: Some("2026-10-01 09:00:00".into()),
             }),
             ..Tableau::default()
         };
         clients(&faux);
         modele(&faux, "2026-11-04 17:30:00");
-        let erreur = referentiel_pour_fichier(&dokos, Cas::DevisModele, &tableau, jour()).expect_err("modifié");
+        let erreur = referentiel_pour_fichier(&dokos, Cas::FacturesModele, &tableau).expect_err("modifié");
         assert!(matches!(erreur, ErreurImport::Modele(m) if m.contains("modifié")));
 
         // Génération sans modèle choisi : refusée avant de lire le modèle.
         let faux = FauxTransport::new();
         clients(&faux);
-        let erreur = referentiel_pour_generer(&Dokos::new(&faux), Cas::FacturesModele, jour(), None).expect_err("sans");
+        let erreur = referentiel_pour_generer(&Dokos::new(&faux), Cas::FacturesModele, None).expect_err("sans");
         assert!(matches!(erreur, ErreurImport::Modele(_)));
     }
 }

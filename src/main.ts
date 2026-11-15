@@ -1,13 +1,12 @@
 import { api } from "./api";
 import { creerAccueil } from "./accueil";
 import { initialiserChat } from "./chat";
-import { initialiserContrats } from "./contrats";
 import { alerte, h } from "./dom";
 import { chargerSuivi, donnees } from "./donnees";
 import { enregistrerPreference, preference, type Onglet } from "./etat";
 import { initialiserFormulaires } from "./formulaires";
 import { initialiserImport } from "./import";
-import { initialiserListes } from "./listes";
+import { initialiserExport } from "./export";
 import { creerMenu, libelleSection, SECTIONS } from "./navigation";
 import { commandesDeBase, creerPalette } from "./palette";
 import { erreurConfig, initialiserReglages } from "./reglages";
@@ -22,9 +21,8 @@ const constructeurs: Record<Onglet, (p: HTMLElement) => void> = {
   accueil: creerAccueil,
   ventes: initialiserVentes,
   formulaires: initialiserFormulaires,
-  contrats: initialiserContrats,
   import: initialiserImport,
-  listes: initialiserListes,
+  export: initialiserExport,
   suivi: initialiserSuivi,
   reglages: () => {},
 };
@@ -40,7 +38,7 @@ function afficher(onglet: Onglet, ancre?: string) {
   courant = onglet;
   menu.marquer(onglet);
   for (const s of SECTIONS) panneau(s.id).hidden = s.id !== onglet;
-  document.title = `${libelleSection(onglet)} — Dokos Assistant`;
+  document.title = `${libelleSection(onglet)} — Dokos Asso`;
   panneau(onglet).dispatchEvent(new Event("onglet-affiche"));
   const cible = ancre ? document.getElementById(ancre) : null;
   if (cible) cible.scrollIntoView({ block: "start" });

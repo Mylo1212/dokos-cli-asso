@@ -85,7 +85,7 @@ impl NouveauClient {
     pub fn avec_contact(mut self, email: Option<&str>, telephone: Option<&str>) -> Result<Self, ErreurClient> {
         self.email = match non_vide(email) {
             None => None,
-            Some(e) if crate::employe::email_plausible(&e) => Some(e),
+            Some(e) if crate::types::email_plausible(&e) => Some(e),
             Some(e) => return Err(ErreurClient::EmailInvalide(e)),
         };
         self.telephone = non_vide(telephone);

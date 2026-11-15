@@ -17,10 +17,10 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            args: "-- -p dokos-assistant"
+            args: "-- -p dokos-asso"
           - os: macos-latest
-            args: "--target universal-apple-darwin -- -p dokos-assistant"
-    # `-p dokos-assistant` dans args : seulement l'appli, pas les autres
+            args: "--target universal-apple-darwin -- -p dokos-asso"
+    # `-p dokos-asso` dans args : seulement l'appli, pas les autres
     # paquets du workspace.
     runs-on: ${{ matrix.os }}
     steps:
@@ -41,7 +41,7 @@ jobs:
         with:
           projectPath: .
           tagName: ${{ github.ref_name }}
-          releaseName: "Dokos Assistant ${{ github.ref_name }}"
+          releaseName: "Dokos Asso ${{ github.ref_name }}"
           releaseBody: "Voir CHANGELOG.md. À essayer sur l'instance de test avant déploiement."
           releaseDraft: true
           prerelease: false

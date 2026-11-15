@@ -1,31 +1,14 @@
 //! Logique des commandes de l'interface, testable sans Tauri ni réseau.
 
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
-
-use conformite::Regles;
-use conformite::dokos::{VerificationContrat, verifier_format, verifier_nouveau_contrat};
-use conformite::donnees::{Gravite, Probleme, a_des_erreurs};
-use conformite::proposition::{LigneDiff, difference};
-use conformite::rapport::{EtatMention, RapportGabarit};
-use conformite::regles::Contexte;
-use dokos_core::contrat::{
-    CreationContrat, DOCTYPE_CONTRAT, NouveauContrat, champs_libres, creer_contrat, lister_types_contrat,
-};
 use dokos_core::date::{Date, DateHeure};
 use dokos_core::doublon::{DocumentExistant, SiDoublon, chercher_doublons};
-use dokos_core::employe::{
-    CreationEmploye, DOCTYPE_EMPLOYE, EmployeExistant, NouvelEmploye, chercher_employes, creer_employe, lister_genres,
-    lister_postes,
-};
 use dokos_core::evenement::{
     CreationEvenement, DOCTYPE_EVENEMENT, EvenementExistant, NouvelEvenement, chercher_evenement_identique,
     creer_evenement, publier,
 };
 use dokos_core::formulaire::{DOCTYPE_INSCRIPTION, NouveauFormulaire, Question, questions_possibles};
-use dokos_core::impression::{lister_formats, telecharger_pdf};
 use dokos_core::meta::{Champ, lire_meta};
-use dokos_core::recherche::{chercher_article_dans, chercher_client};
+use dokos_core::recherche::{chercher_article_dans, chercher_client, lister_articles, lister_clients};
 use dokos_core::vente::{Creation, LigneVente, NouveauDocumentVente, TypeVente, creer_brouillon};
 use dokos_core::{Dokos, Transport};
 
@@ -61,6 +44,18 @@ pub fn chercher_clients<T: Transport>(dokos: &Dokos<T>, recherche: &str) -> Resu
     Ok(clients.into_iter().map(|c| ClientVue { id: c.id, nom: c.nom }).collect())
 }
 
+/// Tous les clients actifs (lecture complète, pour les listes déroulantes).
+pub fn lister_les_clients<T: Transport>(dokos: &Dokos<T>) -> Resultat<Vec<ClientVue>> {
+    let clients = lister_clients(dokos).map_err(texte)?;
+    Ok(clients.into_iter().map(|c| ClientVue { id: c.id, nom: c.nom }).collect())
+}
+
+/// Tous les articles vendables, limités à un groupe (sous-groupes compris) si `groupe` est donné.
+pub fn lister_les_articles<T: Transport>(dokos: &Dokos<T>, groupe: Option<&str>) -> Resultat<Vec<ArticleVue>> {
+    let articles = lister_articles(dokos, groupe).map_err(texte)?;
+    Ok(articles.into_iter().map(vue_article).collect())
+}
+
 pub fn vue_article(a: dokos_core::types::Article) -> ArticleVue {
     ArticleVue { code: a.code, libelle: a.libelle, unite: a.unite, groupe: a.groupe }
 }
@@ -89,7 +84,11 @@ pub fn document_vente(demande: &DemandeVente, societe: Option<&str>) -> Resultat
     let lignes = demande
         .lignes
         .iter()
-        .map(|l| LigneVente::new(&l.article, l.quantite, date_option(l.livraison.as_deref())?).map_err(texte))
+        .map(|l| {
+            LigneVente::new(&l.article, l.quantite, date_option(l.livraison.as_deref())?)
+                .and_then(|ligne| ligne.avec_prix(l.prix))
+                .map_err(texte)
+        })
         .collect::<Resultat<Vec<_>>>()?;
     NouveauDocumentVente::new(
         type_vente,
@@ -261,248 +260,6 @@ pub fn publier_un_evenement<T: Transport>(dokos: &Dokos<T>, base: &str, id: &str
     })
 }
 
-// --- RH -------------------------------------------------------------------
-
-pub fn listes_rh<T: Transport>(dokos: &Dokos<T>, regles: &Regles, societe: Option<&str>) -> Resultat<ListesRh> {
-    let meta = lire_meta(dokos, DOCTYPE_CONTRAT).map_err(texte)?;
-    Ok(ListesRh {
-        genres: lister_genres(dokos).map_err(texte)?,
-        postes: lister_postes(dokos).map_err(texte)?,
-        types_contrat: lister_types_contrat(dokos).map_err(texte)?,
-        formats: lister_formats(dokos, DOCTYPE_CONTRAT).map_err(texte)?,
-        champs_libres: champs_libres(&meta).iter().map(|c| vue_champ(c, c.reqd == 1)).collect(),
-        societe: societe.unwrap_or_default().to_owned(),
-        regles_version: regles.version.clone(),
-        regles_validees: regles.est_validee(),
-        regles_a_relire: regles_a_relire(regles, Date::aujourdhui()),
-    })
-}
-
-/// Vrai si la liste a été validée il y a plus d'un an (ou si sa date est illisible).
-pub fn regles_a_relire(regles: &Regles, aujourdhui: Date) -> bool {
-    if !regles.est_validee() {
-        return false;
-    }
-    regles.valide_le.trim().parse::<Date>().map(|d| d.jours_jusqua(aujourdhui) > 366).unwrap_or(true)
-}
-
-fn vue_employe(base: &str, e: &EmployeExistant) -> EmployeVue {
-    EmployeVue {
-        id: e.id.clone(),
-        nom: e.nom_complet.clone(),
-        entree: e.entree.clone(),
-        lien: lien_desk(base, DOCTYPE_EMPLOYE, &e.id),
-    }
-}
-
-pub fn chercher_des_employes<T: Transport>(dokos: &Dokos<T>, base: &str, recherche: &str) -> Resultat<Vec<EmployeVue>> {
-    let employes = chercher_employes(dokos, recherche).map_err(texte)?;
-    Ok(employes.iter().map(|e| vue_employe(base, e)).collect())
-}
-
-pub fn creer_un_employe<T: Transport>(
-    dokos: &Dokos<T>,
-    base: &str,
-    demande: &DemandeEmploye,
-    societe: Option<&str>,
-) -> Resultat<ResultatEmploye> {
-    let societe =
-        non_vide(societe).ok_or_else(|| ErreurVue::configuration("société manquante : renseignez-la dans Réglages"))?;
-    let employe = NouvelEmploye::new(
-        &demande.prenom,
-        &demande.nom,
-        &demande.genre,
-        date(&demande.naissance)?,
-        date(&demande.entree)?,
-        societe,
-    )
-    .map_err(texte)?
-    .avec_email(demande.email.as_deref())
-    .map_err(texte)?
-    .avec_poste(demande.poste.as_deref());
-    match creer_employe(dokos, &employe, SiDoublon::Reutiliser).map_err(texte)? {
-        CreationEmploye::DejaExistant(e) => Ok(ResultatEmploye { cree: false, employe: vue_employe(base, &e) }),
-        CreationEmploye::Cree(e) => Ok(ResultatEmploye { cree: true, employe: vue_employe(base, &e) }),
-    }
-}
-
-fn nouveau_contrat<T: Transport>(
-    dokos: &Dokos<T>,
-    demande: &DemandeContrat,
-    societe: Option<&str>,
-) -> Resultat<NouveauContrat> {
-    let meta = lire_meta(dokos, DOCTYPE_CONTRAT).map_err(texte)?;
-    let champs: BTreeMap<String, String> = demande.champs.clone();
-    NouveauContrat::new(
-        &demande.employe,
-        &demande.type_contrat,
-        &demande.poste,
-        date(&demande.entree)?,
-        date_option(demande.fin.as_deref())?,
-    )
-    .and_then(|c| c.avec_heures(demande.heures, demande.repartition))
-    .and_then(|c| c.avec_societe(societe).avec_champs(&meta, champs))
-    .map_err(texte)
-}
-
-pub fn vue_problemes(problemes: &[Probleme]) -> Vec<ProblemeVue> {
-    problemes
-        .iter()
-        .map(|p| ProblemeVue {
-            gravite: match p.gravite {
-                Gravite::Erreur => "erreur",
-                Gravite::Avertissement => "avertissement",
-            }
-            .to_owned(),
-            message: p.message.clone(),
-            reference: p.reference.clone(),
-        })
-        .collect()
-}
-
-pub fn vue_rapport(rapport: &RapportGabarit) -> RapportVue {
-    RapportVue {
-        conforme: rapport.conforme(),
-        regles_validees: rapport.regles_validees,
-        version_regles: rapport.version_regles.clone(),
-        mentions: rapport
-            .mentions
-            .iter()
-            .map(|m| {
-                let (etat, detail) = match &m.etat {
-                    EtatMention::Presente => ("presente", String::new()),
-                    EtatMention::Manquante => ("manquante", String::new()),
-                    EtatMention::ChampsAbsentsDeDokos(champs) => {
-                        ("champ_absent", format!("champ à créer dans Dokos : {}", champs.join(", ")))
-                    }
-                };
-                MentionVue { libelle: m.libelle.clone(), reference: m.reference.clone(), etat: etat.to_owned(), detail }
-            })
-            .collect(),
-        interdits: rapport.interdits.clone(),
-        non_verifies: rapport.non_verifies.clone(),
-        a_completer: rapport.a_completer,
-        champs_inconnus: rapport.champs_inconnus.clone(),
-    }
-}
-
-fn vue_verification(verification: &VerificationContrat) -> VerificationContratVue {
-    VerificationContratVue {
-        problemes: vue_problemes(&verification.problemes),
-        bloquant: a_des_erreurs(&verification.problemes),
-        gabarit: verification.gabarit.as_ref().map(vue_rapport),
-    }
-}
-
-pub fn verifier_un_contrat<T: Transport>(
-    dokos: &Dokos<T>,
-    regles: &Regles,
-    demande: &DemandeContrat,
-    societe: Option<&str>,
-) -> Resultat<VerificationContratVue> {
-    let contrat = nouveau_contrat(dokos, demande, societe)?;
-    let verification =
-        verifier_nouveau_contrat(dokos, regles, &contrat, non_vide(demande.format.as_deref())).map_err(texte)?;
-    Ok(vue_verification(&verification))
-}
-
-/// Vérifie de nouveau puis crée : un contrat avec des erreurs n'est jamais créé,
-/// même si l'interface n'a pas lancé la vérification.
-pub fn creer_un_contrat<T: Transport>(
-    dokos: &Dokos<T>,
-    base: &str,
-    regles: &Regles,
-    demande: &DemandeContrat,
-    societe: Option<&str>,
-    si_doublon: SiDoublon,
-) -> Resultat<ResultatContrat> {
-    let contrat = nouveau_contrat(dokos, demande, societe)?;
-    let verification =
-        verifier_nouveau_contrat(dokos, regles, &contrat, non_vide(demande.format.as_deref())).map_err(texte)?;
-    if a_des_erreurs(&verification.problemes) {
-        return Err(ErreurVue::validation(
-            "le contrat a des erreurs : rien n'a été créé. Lancez « Vérifier » pour les voir.",
-        ));
-    }
-    let (cree, contrat) = match creer_contrat(dokos, &contrat, si_doublon).map_err(texte)? {
-        CreationContrat::DejaExistant(c) => (false, c),
-        CreationContrat::Cree(c) => (true, c),
-    };
-    Ok(ResultatContrat { cree, lien: lien_desk(base, DOCTYPE_CONTRAT, &contrat.id), id: contrat.id })
-}
-
-pub fn contexte_format(regles: &Regles, type_contrat: &str, temps_partiel: bool) -> Contexte {
-    let mut contexte = regles.contexte_contrat(type_contrat, None);
-    contexte.temps_partiel = temps_partiel;
-    contexte
-}
-
-/// Lignes communes au-delà de ce nombre autour d'un changement : masquées.
-const CONTEXTE_DIFF: usize = 2;
-
-pub fn compacter_diff(lignes: Vec<LigneDiff>) -> Vec<LigneDiffVue> {
-    let change = |l: &LigneDiff| !matches!(l, LigneDiff::Commune(_));
-    let garder: Vec<bool> = (0..lignes.len())
-        .map(|i| {
-            let debut = i.saturating_sub(CONTEXTE_DIFF);
-            let fin = (i + CONTEXTE_DIFF + 1).min(lignes.len());
-            lignes[debut..fin].iter().any(change)
-        })
-        .collect();
-    let mut vues = Vec::new();
-    let mut masquees = 0;
-    for (ligne, garder) in lignes.into_iter().zip(garder) {
-        if !garder {
-            masquees += 1;
-            continue;
-        }
-        if masquees > 0 {
-            vues.push(LigneDiffVue {
-                genre: "saut".to_owned(), texte: format!("… {masquees} lignes inchangées …")
-            });
-            masquees = 0;
-        }
-        let (genre, texte) = match ligne {
-            LigneDiff::Commune(t) => ("commune", t),
-            LigneDiff::Ajoutee(t) => ("ajout", t),
-            LigneDiff::Retiree(t) => ("retrait", t),
-        };
-        vues.push(LigneDiffVue { genre: genre.to_owned(), texte });
-    }
-    if masquees > 0 {
-        vues.push(LigneDiffVue { genre: "saut".to_owned(), texte: format!("… {masquees} lignes inchangées …") });
-    }
-    vues
-}
-
-pub fn verifier_un_format<T: Transport>(
-    dokos: &Dokos<T>,
-    regles: &Regles,
-    format: &str,
-    contexte: &Contexte,
-) -> Resultat<(VerificationFormatVue, Option<String>)> {
-    let verification = verifier_format(dokos, regles, format, contexte).map_err(texte)?;
-    let proposition = verification.proposition.as_ref().map(|p| PropositionVue {
-        ajouts: p.ajouts.clone(),
-        champs_a_creer: p.champs_a_creer.clone(),
-        a_completer: verification.rapport_propose.as_ref().map_or(0, |r| r.a_completer),
-        diff: compacter_diff(difference(&verification.gabarit, &p.gabarit)),
-    });
-    let gabarit_propose = verification.proposition.map(|p| p.gabarit);
-    Ok((VerificationFormatVue { rapport: vue_rapport(&verification.rapport), proposition }, gabarit_propose))
-}
-
-pub fn chemin_proposition(dossier: &Path, format: &str) -> PathBuf {
-    dossier.join(format!("{}.proposition.html", dokos_config::nom_de_fichier(format)))
-}
-
-pub fn pdf_contrat<T: Transport>(dokos: &Dokos<T>, dossier: &Path, id: &str, format: &str) -> Resultat<PathBuf> {
-    let pdf = telecharger_pdf(dokos, DOCTYPE_CONTRAT, id, format).map_err(texte)?;
-    let chemin = dossier.join(format!("{}.pdf", dokos_config::nom_de_fichier(id)));
-    std::fs::write(&chemin, pdf).map_err(|e| ErreurVue::fichier(format!("{} : {e}", chemin.display())))?;
-    Ok(chemin)
-}
-
 #[cfg(test)]
 mod tests {
     use dokos_core::transport::Methode;
@@ -519,7 +276,7 @@ mod tests {
             client: "CUST-2".into(),
             date: "2026-11-12".into(),
             echeance: Some(String::new()),
-            lignes: vec![LigneDemande { article: "REPAS".into(), quantite: 25.0, livraison: None }],
+            lignes: vec![LigneDemande { article: "REPAS".into(), quantite: 25.0, livraison: None, prix: None }],
             reference: None,
         }
     }
@@ -555,6 +312,20 @@ mod tests {
     }
 
     #[test]
+    fn prix_saisi_sur_une_ligne() {
+        let mut demande = demande_vente("facture");
+        demande.lignes[0].prix = Some(12.5);
+        demande.lignes.push(LigneDemande { article: "SALLE-G".into(), quantite: 1.0, livraison: None, prix: None });
+        let corps = document_vente(&demande, None).expect("facture").corps();
+        assert_eq!(corps["items"][0]["rate"], 12.5);
+        assert!(corps["items"][1].get("rate").is_none(), "sans prix saisi, Dokos garde sa liste de prix");
+        assert_eq!(corps["ignore_pricing_rule"], 1);
+
+        demande.lignes[0].prix = Some(-1.0);
+        assert!(document_vente(&demande, None).is_err());
+    }
+
+    #[test]
     fn vente_creee_avec_lien() {
         let faux = FauxTransport::new();
         faux.repondre_json(200, &json!({"data": []}));
@@ -566,52 +337,6 @@ mod tests {
             creer_vente(&Dokos::new(&faux), BASE, &demande_vente("devis"), None, SiDoublon::Reutiliser).expect("devis");
         assert!(resultat.cree);
         assert_eq!(resultat.document.lien, "https://dokos.exemple.fr/app/quotation/SAL-QTN-1");
-    }
-
-    fn meta_contrat() -> serde_json::Value {
-        let champs: Vec<_> = [
-            "employee",
-            "contract_type",
-            "designation",
-            "date_of_joining",
-            "relieving_date",
-            "weekly_working_hours",
-            "company",
-            "employee_name",
-            "remuneration_brute",
-            "lieu_travail",
-            "motif_cdd",
-        ]
-        .into_iter()
-        .map(|c| json!({"fieldname": c, "fieldtype": "Data"}))
-        .collect();
-        json!({"docs": [{"name": DOCTYPE_CONTRAT, "fields": champs}]})
-    }
-
-    #[test]
-    fn contrat_avec_erreurs_jamais_cree() {
-        let faux = FauxTransport::new();
-        // Structure lue une fois : la vérification reprend celle de la construction.
-        faux.repondre_json(200, &meta_contrat());
-        faux.repondre_json(200, &json!({"data": {"name": "HR-EMP-00012", "date_of_joining": "2026-12-01"}}));
-        let demande = DemandeContrat {
-            employe: "HR-EMP-00012".into(),
-            type_contrat: "CDD".into(),
-            poste: "Animatrice".into(),
-            entree: "2026-12-01".into(),
-            fin: None,
-            heures: Some(35.0),
-            repartition: None,
-            champs: BTreeMap::new(),
-            format: None,
-        };
-        let erreur =
-            creer_un_contrat(&Dokos::new(&faux), BASE, &Regles::par_defaut(), &demande, None, SiDoublon::Reutiliser)
-                .expect_err("bloqué");
-        assert!(erreur.message.contains("rien n'a été créé"), "{erreur}");
-        assert!(faux.requetes().iter().all(|r| r.methode == Methode::Get));
-        assert_eq!(faux.requetes().iter().filter(|r| r.chemin.ends_with("getdoctype")).count(), 1);
-        assert_eq!(faux.reponses_restantes(), 0);
     }
 
     fn meta_inscription() -> serde_json::Value {
@@ -687,62 +412,5 @@ mod tests {
         assert_eq!(publication.page, "https://dokos.exemple.fr/events/ev-2");
         assert_eq!(publication.inscription, "https://dokos.exemple.fr/inscription-age/new?event=EV-2");
         assert_eq!(faux.requetes().iter().filter(|r| r.methode == Methode::Put).count(), 2);
-    }
-
-    #[test]
-    fn employe_cree_ou_refuse() {
-        let demande = DemandeEmploye {
-            prenom: "Marie".into(),
-            nom: "Dupont".into(),
-            genre: "Femme".into(),
-            naissance: "1995-04-02".into(),
-            entree: "2026-12-01".into(),
-            email: Some("marie@exemple.fr".into()),
-            poste: None,
-        };
-        let faux = FauxTransport::new();
-        let sans_societe = creer_un_employe(&Dokos::new(&faux), BASE, &demande, None).expect_err("société");
-        assert_eq!(sans_societe.genre, "configuration");
-        assert!(faux.requetes().is_empty());
-
-        faux.repondre_json(200, &json!({"data": []}));
-        faux.repondre_json(
-            200,
-            &json!({"data": {"name": "HR-EMP-1", "employee_name": "Marie Dupont", "date_of_joining": "2026-12-01"}}),
-        );
-        let r = creer_un_employe(&Dokos::new(&faux), BASE, &demande, Some("Les Amanins")).expect("employé");
-        assert!(r.cree);
-        assert_eq!(r.employe.lien, "https://dokos.exemple.fr/app/employee/HR-EMP-1");
-        let corps = faux.requetes()[1].corps.clone().expect("corps");
-        assert_eq!(corps["company"], "Les Amanins");
-        assert_eq!(corps["personal_email"], "marie@exemple.fr");
-
-        let trop_jeune = DemandeEmploye { naissance: "2020-01-01".into(), ..demande };
-        let erreur = creer_un_employe(&Dokos::new(&faux), BASE, &trop_jeune, Some("Les Amanins")).expect_err("âge");
-        assert_eq!(erreur.genre, "validation");
-    }
-
-    #[test]
-    fn regles_anciennes() {
-        let aujourdhui: Date = "2026-11-03".parse().expect("date");
-        let mut regles = Regles::par_defaut();
-        assert!(!regles_a_relire(&regles, aujourdhui), "non validée : pas de rappel");
-        regles.valide_par = "Juriste".into();
-        regles.valide_le = "2026-01-15".into();
-        assert!(!regles_a_relire(&regles, aujourdhui));
-        regles.valide_le = "2025-01-15".into();
-        assert!(regles_a_relire(&regles, aujourdhui));
-        regles.valide_le = "bientôt".into();
-        assert!(regles_a_relire(&regles, aujourdhui));
-    }
-
-    #[test]
-    fn diff_compacte() {
-        let mut lignes: Vec<LigneDiff> = (0..10).map(|i| LigneDiff::Commune(format!("l{i}"))).collect();
-        lignes.insert(8, LigneDiff::Ajoutee("nouveau".into()));
-        let vues = compacter_diff(lignes);
-        let genres: Vec<&str> = vues.iter().map(|v| v.genre.as_str()).collect();
-        assert_eq!(genres, ["saut", "commune", "commune", "ajout", "commune", "commune"]);
-        assert_eq!(vues[0].texte, "… 6 lignes inchangées …");
     }
 }

@@ -7,7 +7,7 @@ import { definirAssistantActif } from "./etat";
 export function initialiserReglages(panneau: HTMLElement, surEnregistrement: () => void): (etat: EtatConfig) => void {
   const url = saisie({ type: "url", placeholder: "https://dokos.exemple.fr" });
   const http = caseACocher("Autoriser http:// (réseau local uniquement)");
-  const societe = saisie({ placeholder: "Société Dokos (obligatoire pour créer des employés)" });
+  const societe = saisie({ placeholder: "Société Dokos (seulement s'il y en a plusieurs)" });
   const zoneConnexion = h("div", { "aria-live": "polite" });
   const enregistrer = bouton("Enregistrer", "principal", async () => {
     const ok = await occupe([enregistrer], zoneConnexion, async () => {
@@ -27,7 +27,6 @@ export function initialiserReglages(panneau: HTMLElement, surEnregistrement: () 
   const modele = saisie({ placeholder: "qwen3.6-35b-a3b" });
   const basesVentes = saisie({ placeholder: "Identifiants séparés par des virgules" });
   const basesFormulaires = saisie({ placeholder: "Identifiants séparés par des virgules" });
-  const basesContrats = saisie({ placeholder: "Identifiants séparés par des virgules" });
   const cleIa = saisie({ type: "password", autocomplete: "off" });
   const zoneIa = h("div", { "aria-live": "polite" });
   const enregistrerIa = bouton("Enregistrer et tester", "principal", async () => {
@@ -38,7 +37,6 @@ export function initialiserReglages(panneau: HTMLElement, surEnregistrement: () 
         modele.value,
         basesVentes.value,
         basesFormulaires.value,
-        basesContrats.value,
         cleIa.value,
       ),
     );
@@ -58,7 +56,6 @@ export function initialiserReglages(panneau: HTMLElement, surEnregistrement: () 
       modele.value = etat.modele;
       basesVentes.value = etat.basesVentes;
       basesFormulaires.value = etat.basesFormulaires;
-      basesContrats.value = etat.basesContrats;
       cleIa.placeholder = etat.cleEnregistree
         ? "Clé enregistrée (laisser vide pour la garder)"
         : "Clé API (Open WebUI › Réglages › Compte)";
@@ -128,7 +125,6 @@ export function initialiserReglages(panneau: HTMLElement, surEnregistrement: () 
         champ("Clé API", cleIa),
         champ("Bases de connaissance — Ventes", basesVentes),
         champ("Bases — Formulaires", basesFormulaires),
-        champ("Bases — Contrats", basesContrats),
       ),
       h(
         "p",

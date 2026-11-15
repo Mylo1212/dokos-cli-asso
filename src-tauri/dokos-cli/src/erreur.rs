@@ -1,12 +1,9 @@
 use std::fmt;
 
-use conformite::dokos::ErreurVerification;
 use dokos_config::ErreurConfig;
 use dokos_core::DokosError;
 use dokos_core::article::ErreurArticle;
-use dokos_core::contrat::ErreurContrat;
 use dokos_core::date::ErreurDate;
-use dokos_core::employe::ErreurEmploye;
 use dokos_core::evenement::ErreurEvenement;
 use dokos_core::formulaire::ErreurFormulaire;
 use dokos_core::vente::ErreurVente;
@@ -57,15 +54,6 @@ impl From<ErreurImport> for Erreur {
     }
 }
 
-impl From<ErreurVerification> for Erreur {
-    fn from(e: ErreurVerification) -> Self {
-        match e {
-            ErreurVerification::Dokos(e) => Self::Dokos(e),
-            autre => Self::Saisie(autre.to_string()),
-        }
-    }
-}
-
 macro_rules! erreur_de_saisie {
     ($($type:ty),*) => {$(
         impl From<$type> for Erreur {
@@ -76,12 +64,4 @@ macro_rules! erreur_de_saisie {
     )*};
 }
 
-erreur_de_saisie!(
-    ErreurVente,
-    ErreurDate,
-    ErreurEvenement,
-    ErreurFormulaire,
-    ErreurEmploye,
-    ErreurContrat,
-    ErreurArticle
-);
+erreur_de_saisie!(ErreurVente, ErreurDate, ErreurEvenement, ErreurFormulaire, ErreurArticle);

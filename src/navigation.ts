@@ -33,11 +33,10 @@ export const SECTIONS: Section[] = [
     touche: "3",
     profils: ["evenements"],
   },
-  { id: "contrats", libelle: "Contrats", icone: "contrats", groupe: "Créer", touche: "4", profils: ["rh"] },
-  { id: "import", libelle: "Import", icone: "import", groupe: "En nombre", touche: "5", profils: [] },
-  { id: "listes", libelle: "Listes", icone: "listes", groupe: "En nombre", touche: "6", profils: [] },
-  { id: "suivi", libelle: "Suivi", icone: "suivi", groupe: "Suivre", touche: "7", profils: [] },
-  { id: "reglages", libelle: "Réglages", icone: "reglages", groupe: "pied", touche: "8", profils: [] },
+  { id: "import", libelle: "Import", icone: "import", groupe: "En nombre", touche: "4", profils: [] },
+  { id: "export", libelle: "Export", icone: "export", groupe: "En nombre", touche: "5", profils: [] },
+  { id: "suivi", libelle: "Suivi", icone: "suivi", groupe: "Suivre", touche: "6", profils: [] },
+  { id: "reglages", libelle: "Réglages", icone: "reglages", groupe: "pied", touche: "7", profils: [] },
 ];
 
 export function libelleSection(onglet: Onglet): string {
@@ -136,7 +135,7 @@ export function creerMenu(
       "div",
       { class: "menu-tete" },
       h("span", { class: "logo", "aria-hidden": "true" }),
-      h("span", { class: "menu-nom menu-texte" }, "Dokos Assistant"),
+      h("span", { class: "menu-nom menu-texte" }, "Dokos Asso"),
       reduire,
     ),
     recherche,

@@ -64,6 +64,9 @@ pub struct LigneDemande {
     pub article: String,
     pub quantite: f64,
     pub livraison: Option<String>,
+    /// Prix unitaire hors taxes saisi ; sans lui, Dokos applique ses listes de prix.
+    #[serde(default)]
+    pub prix: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -164,138 +167,6 @@ pub struct PublicationVue {
     pub inscription: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ListesRh {
-    pub genres: Vec<String>,
-    pub postes: Vec<String>,
-    pub types_contrat: Vec<String>,
-    pub formats: Vec<String>,
-    pub champs_libres: Vec<ChampVue>,
-    pub societe: String,
-    pub regles_version: String,
-    pub regles_validees: bool,
-    /// La liste a été validée il y a plus d'un an : à faire relire.
-    pub regles_a_relire: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EmployeVue {
-    pub id: String,
-    pub nom: String,
-    pub entree: String,
-    pub lien: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DemandeEmploye {
-    pub prenom: String,
-    pub nom: String,
-    pub genre: String,
-    pub naissance: String,
-    pub entree: String,
-    pub email: Option<String>,
-    pub poste: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ResultatEmploye {
-    pub cree: bool,
-    pub employe: EmployeVue,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DemandeContrat {
-    pub employe: String,
-    pub type_contrat: String,
-    pub poste: String,
-    pub entree: String,
-    pub fin: Option<String>,
-    pub heures: Option<f64>,
-    /// Heures du lundi au dimanche.
-    pub repartition: Option<[f64; 7]>,
-    #[serde(default)]
-    pub champs: BTreeMap<String, String>,
-    pub format: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProblemeVue {
-    /// `erreur` ou `avertissement`.
-    pub gravite: String,
-    pub message: String,
-    pub reference: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MentionVue {
-    pub libelle: String,
-    pub reference: String,
-    /// `presente`, `manquante` ou `champ_absent`.
-    pub etat: String,
-    pub detail: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RapportVue {
-    pub conforme: bool,
-    pub regles_validees: bool,
-    pub version_regles: String,
-    pub mentions: Vec<MentionVue>,
-    pub interdits: Vec<String>,
-    pub non_verifies: Vec<String>,
-    pub a_completer: usize,
-    pub champs_inconnus: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VerificationContratVue {
-    pub problemes: Vec<ProblemeVue>,
-    /// Vrai s'il y a au moins une erreur : la création est refusée.
-    pub bloquant: bool,
-    pub gabarit: Option<RapportVue>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ResultatContrat {
-    pub cree: bool,
-    pub id: String,
-    pub lien: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LigneDiffVue {
-    /// `commune`, `ajout`, `retrait` ou `saut` (lignes communes masquées).
-    pub genre: String,
-    pub texte: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PropositionVue {
-    pub ajouts: Vec<String>,
-    pub champs_a_creer: Vec<String>,
-    pub a_completer: usize,
-    pub diff: Vec<LigneDiffVue>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VerificationFormatVue {
-    pub rapport: RapportVue,
-    pub proposition: Option<PropositionVue>,
-}
-
 // --- Assistant IA ---------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize)]
@@ -306,7 +177,6 @@ pub struct EtatIa {
     pub modele: String,
     pub bases_ventes: String,
     pub bases_formulaires: String,
-    pub bases_contrats: String,
     pub cle_enregistree: bool,
 }
 
@@ -365,53 +235,6 @@ pub struct PropositionEvenementVue {
     pub questions_formulaire: Vec<QuestionVue>,
     pub champs_a_creer: Vec<String>,
     pub questions: Vec<String>,
-    pub avertissements: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EmployeProposeVue {
-    pub prenom: String,
-    pub nom: String,
-    pub naissance: Option<String>,
-    pub genre: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PropositionContratVue {
-    pub employe: ChoixVue<EmployeVue>,
-    pub nouvel_employe: Option<EmployeProposeVue>,
-    pub type_contrat: Option<String>,
-    pub poste: Option<String>,
-    pub poste_connu: bool,
-    pub entree: Option<String>,
-    pub fin: Option<String>,
-    pub heures: Option<f64>,
-    pub repartition: Option<[f64; 7]>,
-    pub champs: BTreeMap<String, String>,
-    pub questions: Vec<String>,
-    pub avertissements: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AjoutIaVue {
-    pub libelle: String,
-    pub par_ia: bool,
-    pub raison: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PropositionFormatIaVue {
-    pub ajouts: Vec<AjoutIaVue>,
-    pub explications: String,
-    pub champs_a_creer: Vec<String>,
-    pub a_completer: usize,
-    pub diff: Vec<LigneDiffVue>,
-    /// Fichier enregistré dans Documents\Dokos.
-    pub chemin: String,
     pub avertissements: Vec<String>,
 }
 
@@ -727,6 +550,14 @@ pub struct DemandeListe {
     pub texte: Option<String>,
     pub inclure_inactifs: bool,
     pub vendables_seulement: bool,
+}
+
+/// Valeurs possibles des filtres « groupe » et « territoire » d'une liste.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReferencesExportVue {
+    pub groupes: Vec<String>,
+    pub territoires: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

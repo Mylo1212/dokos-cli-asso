@@ -3,7 +3,7 @@
 // et de sous-groupe.
 
 import { api, type ArticleVue, type CatalogueVue, type NoeudVue, type PrixVue } from "./api";
-import { recherches } from "./donnees";
+import { listes, recherches, viderListes } from "./donnees";
 import {
   alerte,
   alerteErreur,
@@ -12,6 +12,7 @@ import {
   champ,
   h,
   lienDokos,
+  listeDeroulante,
   montant,
   occupe,
   saisie,
@@ -204,7 +205,10 @@ export function creerCatalogue(options: { surAjout: (article: ArticleVue) => voi
       const zoneActivation = h("div");
       const activer = bouton("Activer maintenant", "", async () => {
         const a = await occupe([activer], zoneActivation, () => api.activerArticle(r.code));
-        if (a) recherches.articles.vider();
+        if (a) {
+          recherches.articles.vider();
+          viderListes();
+        }
         if (a)
           zoneActivation.replaceChildren(
             alerte("succes", `Article ${a.code} actif`, h("div", { class: "actions" }, lienDokos(a.lien))),
@@ -249,19 +253,30 @@ export function creerCatalogue(options: { surAjout: (article: ArticleVue) => voi
       if (r.cree) await charger();
     });
 
-    const codeDeplace = saisie({ placeholder: "Code de l'article" });
+    // Article à déplacer : choisi dans la liste, ou code tapé (un article encore désactivé n'y figure pas).
+    let articleDeplace: ArticleVue | null = null;
+    const choixDeplace = listeDeroulante<ArticleVue>({
+      placeholder: "Choisir un article ou taper son code…",
+      lire: () => listes.articles(null),
+      libelle: (a) => a.libelle || a.code,
+      identifiant: (a) => a.code,
+      surChoix: (a) => (articleDeplace = a),
+    });
     const versGroupe = selection(feuilles, "Nouveau groupe…");
     const zoneDeplacement = h("div", { "aria-live": "polite" });
     const deplacer = bouton("Déplacer", "", async () => {
-      if (!valeur(codeDeplace) || !versGroupe.value)
-        return zoneDeplacement.replaceChildren(alerte("attention", "À compléter", "Code et groupe sont obligatoires."));
-      const r = await occupe([deplacer], zoneDeplacement, () =>
-        api.deplacerArticle(codeDeplace.value.trim(), versGroupe.value),
-      );
-      if (r)
+      const codeADeplacer = articleDeplace?.code ?? choixDeplace.texteSaisi();
+      if (!codeADeplacer || !versGroupe.value)
+        return zoneDeplacement.replaceChildren(
+          alerte("attention", "À compléter", "Article et groupe sont obligatoires."),
+        );
+      const r = await occupe([deplacer], zoneDeplacement, () => api.deplacerArticle(codeADeplacer, versGroupe.value));
+      if (r) {
+        viderListes();
         zoneDeplacement.replaceChildren(
           alerte("succes", `${r.code} déplacé`, h("div", { class: "actions" }, lienDokos(r.lien))),
         );
+      }
     });
 
     const details = h(
@@ -285,7 +300,7 @@ export function creerCatalogue(options: { surAjout: (article: ArticleVue) => voi
       h("div", { class: "actions" }, conteneur.label, creerGroupe),
       zoneGroupe,
       h("h3", {}, "Déplacer un article"),
-      h("div", { class: "grille" }, champ("Code", codeDeplace), champ("Vers le groupe", versGroupe)),
+      h("div", { class: "grille" }, champ("Article", choixDeplace.racine), champ("Vers le groupe", versGroupe)),
       h("div", { class: "actions" }, deplacer),
       zoneDeplacement,
     );

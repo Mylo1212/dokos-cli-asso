@@ -15,7 +15,7 @@ pub const ONGLET_MARQUE: &str = "_dokos";
 pub const ONGLET_DONNEES: &str = "Données";
 pub const ONGLET_LISTES: &str = "Listes";
 pub const ONGLET_MODE_EMPLOI: &str = "Mode d'emploi";
-const SIGNATURE: &str = "dokos-assistant";
+const SIGNATURE: &str = "dokos-asso";
 
 /// Identité du modèle d'où vient le fichier.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -354,7 +354,7 @@ mod tests {
             lignes: vec![(2, vec!["Mairie de Crest".into()]), (3, vec![" ".into()]), (4, vec!["CCAS".into()])],
         };
         assert!(tableau.verifier_marque(Cas::Factures).is_ok());
-        assert!(tableau.verifier_marque(Cas::Devis).is_err());
+        assert!(tableau.verifier_marque(Cas::Clients).is_err());
         let tableau = tableau.sans_exemple(&["mairie de crest".to_owned()]);
         assert_eq!(tableau.lignes.len(), 1);
         let sans_marque = Tableau::default();

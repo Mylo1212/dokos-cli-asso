@@ -1,12 +1,12 @@
-# Appli Tauri « Dokos Assistant » et racine du workspace.
+# Appli Tauri « Dokos Asso » et racine du workspace.
 #
 # Sans option, cargo vise ce paquet (l'appli), comme dans un projet Tauri
 # ordinaire : `tauri build` et `tauri dev` marchent tels quels. Pour tout le
 # workspace : `--workspace` (voir `npm run tout`). L'appli demande le frontend
 # construit (`npm run build`) et, sous Linux, WebKitGTK.
 [package]
-name = "dokos-assistant"
-description = "Interface pour créer devis, commandes, factures, formulaires et contrats dans Dokos"
+name = "dokos-asso"
+description = "Interface pour créer devis, commandes, factures et formulaires dans Dokos, importer et exporter des tableaux"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -17,7 +17,6 @@ tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
 assistant-core.workspace = true
-conformite.workspace = true
 dokos-config.workspace = true
 dokos-core.workspace = true
 dokos-import.workspace = true
@@ -43,17 +42,16 @@ unwrap_used = "warn"
 
 [workspace]
 resolver = "3"
-members = [".", "assistant-core", "conformite", "dokos-cli", "dokos-config", "dokos-core", "dokos-import"]
+members = [".", "assistant-core", "dokos-cli", "dokos-config", "dokos-core", "dokos-import"]
 
 [workspace.package]
-version = "0.2.3"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.90"
 publish = false
 
 [workspace.dependencies]
 assistant-core = { path = "assistant-core" }
-conformite = { path = "conformite" }
 dokos-config = { path = "dokos-config" }
 dokos-core = { path = "dokos-core" }
 dokos-import = { path = "dokos-import" }

@@ -6,8 +6,6 @@
 //!   Windows), service [`SERVICE_TROUSSEAU`], jamais dans le fichier.
 //! - `[ia]` : serveur Open WebUI (adresse Tailscale), modèle et bases de
 //!   connaissance par domaine ; sa clé API est aussi dans le trousseau.
-//! - `mentions-contrats.toml` : liste des mentions obligatoires, si elle a été
-//!   exportée pour être adaptée ; sinon celle livrée avec l'outil.
 
 pub mod journal;
 
@@ -20,15 +18,12 @@ use assistant_core::OpenWebUi;
 use assistant_core::adresse::{URL_PAR_DEFAUT, valider_url_ia};
 use assistant_core::owui::MODELE_PAR_DEFAUT;
 
-use conformite::Regles;
-use conformite::regles::REGLES_PAR_DEFAUT;
 use dokos_core::{Dokos, DokosError, HttpTransport, Secret};
 use serde::{Deserialize, Serialize};
 
-pub const SERVICE_TROUSSEAU: &str = "dokos-cli";
+pub const SERVICE_TROUSSEAU: &str = "dokos-cli-asso";
 /// Chemin du fichier de configuration, si on veut l'imposer.
 const VARIABLE_CHEMIN: &str = "DOKOS_CONFIG";
-const FICHIER_REGLES: &str = "mentions-contrats.toml";
 /// Entrée du trousseau pour la clé Open WebUI.
 const UTILISATEUR_IA: &str = "openwebui";
 /// Une réponse du modèle local peut prendre plus d'une minute.
@@ -42,7 +37,7 @@ pub enum Profil {
     Ventes,
     /// Événements et formulaires web (rôle Website Manager).
     Evenements,
-    /// Employés, contrats, formats d'impression en lecture (rôle HR User).
+    /// Échéances des contrats de travail et export des employés, en lecture (rôle HR User).
     Rh,
 }
 
@@ -170,17 +165,11 @@ pub struct BasesIa {
     pub ventes: Vec<String>,
     #[serde(default)]
     pub formulaires: Vec<String>,
-    #[serde(default)]
-    pub contrats: Vec<String>,
 }
 
 impl Default for BasesIa {
     fn default() -> Self {
-        Self {
-            ventes: vec!["prestations".to_owned()],
-            formulaires: vec!["evenements".to_owned()],
-            contrats: vec!["convention-collective".to_owned()],
-        }
+        Self { ventes: vec!["prestations".to_owned()], formulaires: vec!["evenements".to_owned()] }
     }
 }
 
@@ -306,7 +295,7 @@ fn nom_de_secret(valeurs: &BTreeMap<String, toml::Value>) -> Option<String> {
     None
 }
 
-/// Dossier de configuration : `%APPDATA%\dokos-cli` sous Windows.
+/// Dossier de configuration : `%APPDATA%\dokos-cli-asso` sous Windows.
 pub fn dossier() -> Result<PathBuf, ErreurConfig> {
     if let Some(chemin) = env::var_os(VARIABLE_CHEMIN) {
         let chemin = PathBuf::from(chemin);
@@ -314,7 +303,7 @@ pub fn dossier() -> Result<PathBuf, ErreurConfig> {
     }
     let dossier =
         dirs::config_dir().ok_or_else(|| ErreurConfig::Fichier("dossier de configuration introuvable".into()))?;
-    Ok(dossier.join("dokos-cli"))
+    Ok(dossier.join("dokos-cli-asso"))
 }
 
 pub fn chemin() -> Result<PathBuf, ErreurConfig> {
@@ -430,38 +419,7 @@ pub fn connecter(profil: Profil) -> Result<(Config, Dokos<HttpTransport>), Erreu
     Ok((config, Dokos::new(transport).avec_memoire()))
 }
 
-pub fn chemin_regles() -> Result<PathBuf, ErreurConfig> {
-    Ok(dossier()?.join(FICHIER_REGLES))
-}
-
-/// Mentions obligatoires : fichier adapté s'il existe, sinon celui livré.
-pub fn charger_regles() -> Result<(Regles, Option<PathBuf>), ErreurConfig> {
-    let chemin = chemin_regles()?;
-    match fs::read_to_string(&chemin) {
-        Ok(texte) => {
-            let regles = Regles::depuis_toml(&texte)
-                .map_err(|e| ErreurConfig::Fichier(format!("{} : {e}", chemin.display())))?;
-            Ok((regles, Some(chemin)))
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok((Regles::par_defaut(), None)),
-        Err(e) => Err(erreur_fichier(&chemin, e)),
-    }
-}
-
-/// Écrit le fichier livré dans le dossier de configuration, sans écraser.
-pub fn exporter_regles() -> Result<PathBuf, ErreurConfig> {
-    let chemin = chemin_regles()?;
-    if chemin.exists() {
-        return Err(ErreurConfig::Fichier(format!("{} existe déjà", chemin.display())));
-    }
-    if let Some(dossier) = chemin.parent() {
-        fs::create_dir_all(dossier).map_err(|e| erreur_fichier(dossier, e))?;
-    }
-    fs::write(&chemin, REGLES_PAR_DEFAUT).map_err(|e| erreur_fichier(&chemin, e))?;
-    Ok(chemin)
-}
-
-/// Dossier des propositions de formats d'impression et des PDF.
+/// Dossier `Documents\Dokos` : exports, modèles et rapports d'import, journal des actions.
 pub fn dossier_documents() -> Result<PathBuf, ErreurConfig> {
     let base = dirs::document_dir()
         .or_else(dirs::home_dir)
@@ -508,7 +466,7 @@ mod tests {
         let config = Config::depuis_toml("url = \"https://d.fr\"\n").expect("config");
         assert_eq!(config.ia.url, "http://mac-studio:8080");
         assert_eq!(config.ia.modele, "qwen3.6-35b-a3b");
-        assert_eq!(config.ia.bases.contrats, ["convention-collective"]);
+        assert_eq!(config.ia.bases.ventes, ["prestations"]);
         let partielle = Config::depuis_toml("url = \"https://d.fr\"\n[ia]\nmodele = \"autre\"\n").expect("config");
         assert_eq!((partielle.ia.url.as_str(), partielle.ia.modele.as_str()), ("http://mac-studio:8080", "autre"));
         assert_eq!(liste_bases(" kb-1, kb-2 ;kb-3 "), ["kb-1", "kb-2", "kb-3"]);
@@ -556,7 +514,7 @@ mod tests {
 
     #[test]
     fn noms_de_fichier() {
-        assert_eq!(nom_de_fichier("Contrat CDD / temps partiel"), "Contrat-CDD-temps-partiel");
+        assert_eq!(nom_de_fichier("Factures / octobre"), "Factures-octobre");
         assert_eq!(nom_de_fichier("../../etc"), "etc");
         assert_eq!(nom_de_fichier("***"), "document");
     }

@@ -54,7 +54,7 @@ export interface DemandeVente {
   client: string;
   date: string;
   echeance: string | null;
-  lignes: { article: string; quantite: number; livraison: string | null }[];
+  lignes: { article: string; quantite: number; livraison: string | null; prix: number | null }[];
   reference: string | null;
 }
 
@@ -116,105 +116,12 @@ export interface PublicationVue {
   inscription: string;
 }
 
-export interface ListesRh {
-  genres: string[];
-  postes: string[];
-  typesContrat: string[];
-  formats: string[];
-  champsLibres: ChampVue[];
-  societe: string;
-  reglesVersion: string;
-  reglesValidees: boolean;
-  reglesARelire: boolean;
-}
-
-export interface EmployeVue {
-  id: string;
-  nom: string;
-  entree: string;
-  lien: string;
-}
-
-export interface DemandeEmploye {
-  prenom: string;
-  nom: string;
-  genre: string;
-  naissance: string;
-  entree: string;
-  email: string | null;
-  poste: string | null;
-}
-
-export interface DemandeContrat {
-  employe: string;
-  typeContrat: string;
-  poste: string;
-  entree: string;
-  fin: string | null;
-  heures: number | null;
-  repartition: number[] | null;
-  champs: Record<string, string>;
-  format: string | null;
-}
-
-export interface ProblemeVue {
-  gravite: "erreur" | "avertissement";
-  message: string;
-  reference: string | null;
-}
-
-export interface MentionVue {
-  libelle: string;
-  reference: string;
-  etat: "presente" | "manquante" | "champ_absent";
-  detail: string;
-}
-
-export interface RapportVue {
-  conforme: boolean;
-  reglesValidees: boolean;
-  versionRegles: string;
-  mentions: MentionVue[];
-  interdits: string[];
-  nonVerifies: string[];
-  aCompleter: number;
-  champsInconnus: string[];
-}
-
-export interface VerificationContratVue {
-  problemes: ProblemeVue[];
-  bloquant: boolean;
-  gabarit: RapportVue | null;
-}
-
-export interface ResultatContrat {
-  cree: boolean;
-  id: string;
-  lien: string;
-}
-
-export interface LigneDiffVue {
-  genre: "commune" | "ajout" | "retrait" | "saut";
-  texte: string;
-}
-
-export interface VerificationFormatVue {
-  rapport: RapportVue;
-  proposition: {
-    ajouts: string[];
-    champsACreer: string[];
-    aCompleter: number;
-    diff: LigneDiffVue[];
-  } | null;
-}
-
 export interface EtatIa {
   active: boolean;
   url: string;
   modele: string;
   basesVentes: string;
   basesFormulaires: string;
-  basesContrats: string;
   cleEnregistree: boolean;
 }
 
@@ -250,29 +157,6 @@ export interface PropositionEvenement extends Remarques {
   annulation: boolean;
   questionsFormulaire: { champ: string; obligatoire: boolean }[];
   champsACreer: string[];
-}
-
-export interface PropositionContrat extends Remarques {
-  employe: ChoixVue<EmployeVue>;
-  nouvelEmploye: { prenom: string; nom: string; naissance: string | null; genre: string | null } | null;
-  typeContrat: string | null;
-  poste: string | null;
-  posteConnu: boolean;
-  entree: string | null;
-  fin: string | null;
-  heures: number | null;
-  repartition: number[] | null;
-  champs: Record<string, string>;
-}
-
-export interface PropositionFormatIa {
-  ajouts: { libelle: string; parIa: boolean; raison: string | null }[];
-  explications: string;
-  champsACreer: string[];
-  aCompleter: number;
-  diff: LigneDiffVue[];
-  chemin: string;
-  avertissements: string[];
 }
 
 // --- Catalogue ---
@@ -440,6 +324,12 @@ export interface ResultatImportVue {
   rapport: string;
 }
 
+/** Valeurs possibles des filtres « groupe » et « territoire » d'une liste. */
+export interface ReferencesExport {
+  groupes: string[];
+  territoires: string[];
+}
+
 export interface StatutListe {
   cle: string;
   libelle: string;
@@ -576,6 +466,10 @@ export const api = {
   testerProfil: (profilNom: string) => invoke<string>("tester_profil", { profilNom }),
   etatConnexions: () => invoke<ConnexionVue[]>("etat_connexions"),
 
+  /** Tous les clients actifs, pour les listes déroulantes. */
+  listeClients: () => invoke<ClientVue[]>("liste_clients"),
+  /** Tous les articles vendables, ou ceux d'un groupe et de ses sous-groupes. */
+  listeArticles: (groupe: string | null = null) => invoke<ArticleVue[]>("liste_articles", { groupe }),
   chercherClients: (recherche: string) => invoke<ClientVue[]>("chercher_clients", { recherche }),
   chercherArticles: (recherche: string, groupe: string | null = null) =>
     invoke<ArticleVue[]>("chercher_articles", { recherche, groupe }),
@@ -605,6 +499,8 @@ export const api = {
   facturesEnRetard: (aujourdhuiTexte: string) => invoke<ImpayesVue>("factures_en_retard", { aujourdhuiTexte }),
 
   listesExportables: () => invoke<ListeVue[]>("listes_exportables"),
+  /** Groupes et territoires que les filtres de la liste acceptent. */
+  referencesExport: (liste: string) => invoke<ReferencesExport>("references_export", { liste }),
   assistantListe: (demande: string, aujourdhui: string) =>
     invoke<PropositionListe>("assistant_liste", { demande, aujourdhui }),
   exporterListe: (demande: DemandeListe, aujourdhui: string) =>
@@ -638,19 +534,6 @@ export const api = {
     invoke<ResultatEvenement>("creer_evenement", { demande, autoriserDoublon }),
   publierEvenement: (id: string) => invoke<PublicationVue>("publier_evenement", { id }),
 
-  listesRh: () => invoke<ListesRh>("listes_rh"),
-  chercherEmployes: (recherche: string) => invoke<EmployeVue[]>("chercher_employes", { recherche }),
-  creerEmploye: (demande: DemandeEmploye) =>
-    invoke<{ cree: boolean; employe: EmployeVue }>("creer_employe", { demande }),
-  verifierContrat: (demande: DemandeContrat) => invoke<VerificationContratVue>("verifier_contrat", { demande }),
-  creerContrat: (demande: DemandeContrat, autoriserDoublon: boolean) =>
-    invoke<ResultatContrat>("creer_contrat", { demande, autoriserDoublon }),
-  verifierFormat: (format: string, typeContrat: string, tempsPartiel: boolean) =>
-    invoke<VerificationFormatVue>("verifier_format", { format, typeContrat, tempsPartiel }),
-  enregistrerProposition: (format: string, typeContrat: string, tempsPartiel: boolean) =>
-    invoke<string>("enregistrer_proposition", { format, typeContrat, tempsPartiel }),
-  pdfContrat: (id: string, format: string) => invoke<string>("pdf_contrat", { id, format }),
-
   etatIa: () => invoke<EtatIa>("etat_ia"),
   enregistrerIa: (
     active: boolean,
@@ -658,9 +541,8 @@ export const api = {
     modele: string,
     basesVentes: string,
     basesFormulaires: string,
-    basesContrats: string,
     cle: string,
-  ) => invoke<string>("enregistrer_ia", { active, url, modele, basesVentes, basesFormulaires, basesContrats, cle }),
+  ) => invoke<string>("enregistrer_ia", { active, url, modele, basesVentes, basesFormulaires, cle }),
   testerIa: () => invoke<string>("tester_ia"),
   discuter: (messages: MessageChat[], onglet: string, aujourdhui: string) =>
     invoke<ReponseChat>("discuter", { messages, onglet, aujourdhui }),
@@ -668,10 +550,6 @@ export const api = {
     invoke<PropositionVente>("assistant_vente", { demande, aujourdhui }),
   assistantEvenement: (demande: string, aujourdhui: string) =>
     invoke<PropositionEvenement>("assistant_evenement", { demande, aujourdhui }),
-  assistantContrat: (demande: string, aujourdhui: string) =>
-    invoke<PropositionContrat>("assistant_contrat", { demande, aujourdhui }),
-  assistantFormat: (format: string, typeContrat: string, tempsPartiel: boolean, aujourdhui: string) =>
-    invoke<PropositionFormatIa | null>("assistant_format", { format, typeContrat, tempsPartiel, aujourdhui }),
 
   ouvrirLien: (url: string) => invoke<void>("ouvrir_lien", { url }),
   ouvrirFichier: (chemin: string) => invoke<void>("ouvrir_fichier", { chemin }),

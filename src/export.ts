@@ -1,9 +1,9 @@
-// Onglet Listes : clients, articles, devis, commandes, factures et employés
+// Onglet Export : clients, articles, devis, commandes, factures et employés
 // en fichier Excel. L'assistant choisit la liste et les filtres ; Rust les
 // vérifie, lit Dokos (lecture seule) et écrit le fichier dans
-// Documents\Dokos\listes. Le formulaire marche aussi sans l'assistant.
+// Documents\Dokos\exports. Le formulaire marche aussi sans l'assistant.
 
-import { api, type ClientVue, type ListeVue, type PropositionListe } from "./api";
+import { api, type ClientVue, type ListeVue, type PropositionListe, type ReferencesExport } from "./api";
 import { choixCandidats, enregistrerPreRemplissage } from "./assistant";
 import {
   alerte,
@@ -14,28 +14,52 @@ import {
   champ,
   h,
   lienFichier,
+  listeDeroulante,
   occupe,
-  recherche,
   saisie,
 } from "./dom";
-import { recherches } from "./donnees";
+import { listes } from "./donnees";
 import { demandeListe, dossierDe } from "./valeurs";
 
-export function initialiserListes(panneau: HTMLElement): void {
+export function initialiserExport(panneau: HTMLElement): void {
   let catalogue: ListeVue[] = [];
   let liste: ListeVue | null = null;
   let client: ClientVue | null = null;
+  let groupe: string | null = null;
+  let territoire: string | null = null;
 
   const segments = h("div", { class: "segments", role: "group", "aria-label": "Liste à exporter" });
-  const choixClient = recherche<ClientVue>({
-    placeholder: "Nom ou identifiant du client",
-    chercher: recherches.clients,
+  const choixClient = listeDeroulante<ClientVue>({
+    placeholder: "Choisir un client…",
+    lire: () => listes.clients(),
     libelle: (c) => c.nom || c.id,
     identifiant: (c) => c.id,
     surChoix: (c) => (client = c),
   });
-  const groupe = saisie({ placeholder: "Nom du groupe (sous-groupes compris)" });
-  const territoire = saisie({ placeholder: "Nom du territoire" });
+  // Groupes et territoires de la liste choisie : relus si on change de liste.
+  const reference = (
+    placeholder: string,
+    valeurs: (r: ReferencesExport) => string[],
+    choisi: (v: string | null) => void,
+  ) =>
+    listeDeroulante<string>({
+      placeholder,
+      lire: async () => (liste ? valeurs(await listes.references(liste.nom)) : []),
+      cle: () => liste?.nom ?? "",
+      libelle: (v) => v,
+      identifiant: () => "",
+      surChoix: choisi,
+    });
+  const choixGroupe = reference(
+    "Choisir un groupe (sous-groupes compris)…",
+    (r) => r.groupes,
+    (v) => (groupe = v),
+  );
+  const choixTerritoire = reference(
+    "Choisir un territoire…",
+    (r) => r.territoires,
+    (v) => (territoire = v),
+  );
   const du = saisie({ type: "date" });
   const au = saisie({ type: "date" });
   const statut = h("select");
@@ -44,8 +68,8 @@ export function initialiserListes(panneau: HTMLElement): void {
   const vendables = caseACocher("Articles vendables seulement");
 
   const champClient = champ("Client", choixClient.racine, "large");
-  const champGroupe = champ("Groupe", groupe);
-  const champTerritoire = champ("Territoire", territoire);
+  const champGroupe = champ("Groupe", choixGroupe.racine);
+  const champTerritoire = champ("Territoire", choixTerritoire.racine);
   const champDu = champ("Du", du);
   const champAu = champ("Au", au);
   const champStatut = champ("Statut", statut);
@@ -55,6 +79,11 @@ export function initialiserListes(panneau: HTMLElement): void {
   exporter.dataset.raccourci = "verifier";
 
   function choisirListe(nom: string) {
+    // Un groupe de clients n'est pas un groupe d'articles : changer de liste efface groupe et territoire.
+    if (liste?.nom !== nom) {
+      choixGroupe.choisir(null);
+      choixTerritoire.choisir(null);
+    }
     liste = catalogue.find((l) => l.nom === nom) ?? null;
     for (const b of segments.querySelectorAll<HTMLButtonElement>("button")) {
       b.setAttribute("aria-pressed", String(b.dataset.liste === nom));
@@ -99,8 +128,8 @@ export function initialiserListes(panneau: HTMLElement): void {
       (c) => choixClient.choisir(c),
     );
     if (candidats) ajouter(candidats);
-    groupe.value = p.groupe ?? "";
-    territoire.value = p.territoire ?? "";
+    choixGroupe.saisir(p.groupe ?? "", false);
+    choixTerritoire.saisir(p.territoire ?? "", false);
     du.value = p.du ?? "";
     au.value = p.au ?? "";
     statut.value = p.statut ?? "";
@@ -116,8 +145,8 @@ export function initialiserListes(panneau: HTMLElement): void {
     }
     const demande = demandeListe(liste, {
       client: client?.id ?? null,
-      groupe: groupe.value,
-      territoire: territoire.value,
+      groupe: groupe ?? choixGroupe.texteSaisi(),
+      territoire: territoire ?? choixTerritoire.texteSaisi(),
       du: du.value,
       au: au.value,
       statut: statut.value,
@@ -152,7 +181,7 @@ export function initialiserListes(panneau: HTMLElement): void {
   }
 
   enregistrerPreRemplissage(
-    "listes",
+    "export",
     async (demande, jour, ajouter) => {
       const p = await api.assistantListe(demande, jour);
       remplir(p, ajouter);
@@ -161,14 +190,14 @@ export function initialiserListes(panneau: HTMLElement): void {
       return p;
     },
     {
-      titreSucces: "Liste préparée",
+      titreSucces: "Export préparé",
       texteSucces:
-        "Filtres repris dans l'onglet Listes, où le fichier Excel apparaît. Modifiez-les puis recréez-le si besoin.",
+        "Filtres repris dans l'onglet Export, où le fichier Excel apparaît. Modifiez-les puis recréez-le si besoin.",
     },
   );
 
   panneau.append(
-    h("h1", {}, "Listes"),
+    h("h1", {}, "Export"),
     h(
       "p",
       { class: "sous-titre" },
@@ -195,7 +224,7 @@ export function initialiserListes(panneau: HTMLElement): void {
       h(
         "p",
         { class: "note" },
-        "Le fichier est enregistré dans Documents\\Dokos\\listes, avec une feuille « À propos » qui rappelle les filtres. 10 000 lignes au plus.",
+        "Le fichier est enregistré dans Documents\\Dokos\\exports, avec une feuille « À propos » qui rappelle les filtres. 10 000 lignes au plus.",
       ),
       h("div", { class: "actions" }, exporter),
       resultat,
@@ -204,14 +233,14 @@ export function initialiserListes(panneau: HTMLElement): void {
 
   void api
     .listesExportables()
-    .then((listes) => {
-      catalogue = listes;
-      for (const l of listes) {
+    .then((disponibles) => {
+      catalogue = disponibles;
+      for (const l of disponibles) {
         const b = h("button", { type: "button", "aria-pressed": "false", "data-liste": l.nom }, l.libelle);
         b.addEventListener("click", () => choisirListe(l.nom));
         segments.append(b);
       }
-      choisirListe(listes[0]?.nom ?? "");
+      choisirListe(disponibles[0]?.nom ?? "");
     })
     .catch((e: unknown) => segments.replaceChildren(alerteErreur(e)));
 }

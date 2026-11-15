@@ -1,4 +1,9 @@
 //! Recherche de clients et d'articles, et interprétation des résultats.
+//!
+//! Deux modes : la recherche par texte ([`chercher_client`], [`chercher_article`]),
+//! limitée à [`LIMITE_RECHERCHE`] résultats, et la lecture complète
+//! ([`lister_clients`], [`lister_articles`]) qui alimente les listes déroulantes
+//! de l'appli et les listes jointes aux modèles d'import.
 
 use crate::client::{Dokos, Filtre, Liste};
 use crate::erreur::DokosError;
@@ -7,6 +12,8 @@ use crate::types::{Article, CHAMPS_ARTICLE, CHAMPS_CLIENT, Client, DOCTYPE_ARTIC
 
 /// Nombre maximal de candidats renvoyés par une recherche.
 pub const LIMITE_RECHERCHE: u32 = 10;
+/// Nombre maximal d'éléments d'une lecture complète (lue page par page).
+pub const LISTE_MAX: usize = 10_000;
 /// Longueur maximale, en caractères, d'un texte de recherche.
 const LONGUEUR_MAX: usize = 100;
 
@@ -48,6 +55,28 @@ pub fn chercher_article_dans<T: Transport>(
         .ordre("item_name asc")
         .limite(LIMITE_RECHERCHE);
     dokos.lister(DOCTYPE_ARTICLE, &liste)
+}
+
+/// Tous les clients actifs, par ordre alphabétique (au plus [`LISTE_MAX`]).
+pub fn lister_clients<T: Transport>(dokos: &Dokos<T>) -> Result<Vec<Client>, DokosError> {
+    dokos.lister_tout(
+        DOCTYPE_CLIENT,
+        &Liste::new(CHAMPS_CLIENT).filtre(Filtre::egal("disabled", 0)).ordre("customer_name asc"),
+        LISTE_MAX,
+    )
+}
+
+/// Tous les articles actifs et vendables, hors modèles à variantes, par groupe
+/// puis par libellé (au plus [`LISTE_MAX`]). Avec `groupe` : ce groupe et ses sous-groupes.
+pub fn lister_articles<T: Transport>(dokos: &Dokos<T>, groupe: Option<&str>) -> Result<Vec<Article>, DokosError> {
+    let mut liste = Liste::new(CHAMPS_ARTICLE)
+        .filtre(Filtre::egal("disabled", 0))
+        .filtre(Filtre::egal("is_sales_item", 1))
+        .filtre(Filtre::egal("has_variants", 0));
+    if let Some(groupe) = groupe.map(str::trim).filter(|g| !g.is_empty()) {
+        liste = liste.filtre(Filtre::descendant_de("item_group", groupe));
+    }
+    dokos.lister_tout(DOCTYPE_ARTICLE, &liste.ordre("item_group asc, item_name asc"), LISTE_MAX)
 }
 
 pub fn trouver_client<T: Transport>(dokos: &Dokos<T>, texte: &str) -> Result<Correspondance<Client>, DokosError> {
@@ -189,6 +218,27 @@ mod tests {
         faux.repondre_json(200, &json!({"data": []}));
         chercher_article_dans(&Dokos::new(&faux), "repas", Some("Restauration")).expect("recherche");
         assert!(faux.requetes()[1].parametre("filters").is_some_and(|f| f.contains("descendants of (inclusive)")));
+    }
+
+    #[test]
+    fn lectures_completes() {
+        let faux = FauxTransport::new();
+        faux.repondre_json(200, &json!({"data": [{"name": "CUST-1", "customer_name": "Mairie de Crest"}]}));
+        let clients = lister_clients(&Dokos::new(&faux)).expect("clients");
+        assert_eq!(clients, vec![client("CUST-1", "Mairie de Crest")]);
+        let requete = &faux.requetes()[0];
+        assert_eq!(requete.parametre("filters"), Some(r#"[["disabled","=",0]]"#));
+        assert_eq!(requete.parametre("order_by"), Some("customer_name asc"));
+        assert_eq!(requete.parametre("or_filters"), None, "pas de texte cherché : tous les clients");
+
+        faux.repondre_json(
+            200,
+            &json!({"data": [{"name": "REPAS", "item_name": "Repas", "stock_uom": "Unité", "item_group": "Restauration"}]}),
+        );
+        let articles = lister_articles(&Dokos::new(&faux), Some(" Restauration ")).expect("articles");
+        assert_eq!(articles[0].code, "REPAS");
+        let filtres = faux.requetes()[1].parametre("filters").unwrap_or_default().to_owned();
+        assert!(filtres.contains(r#"["is_sales_item","=",1]"#) && filtres.contains("descendants of (inclusive)"));
     }
 
     #[test]

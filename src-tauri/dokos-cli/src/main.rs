@@ -1,21 +1,18 @@
-//! `dokos` : piloter Dokos depuis le terminal, par l'API REST de Frappe.
+//! `dokos` : piloter Dokos (version asso) depuis le terminal, par l'API REST de Frappe.
 
 mod erreur;
 mod evenements;
 mod plus;
-mod rh;
 mod saisie;
 mod ventes;
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
-use conformite::regles::Contexte;
 use dokos_config::{Config, Profil};
 use dokos_core::date::{Date, DateHeure};
-use dokos_core::employe::chercher_employes;
+use dokos_core::export::TypeListe;
 use dokos_core::formulaire::Question;
 use dokos_core::recherche::{LIMITE_RECHERCHE, chercher_client};
 use dokos_core::transformation::Transformation;
@@ -44,10 +41,10 @@ enum Action {
     /// Articles vendables et catalogue (profil ventes)
     #[command(subcommand)]
     Articles(Articles),
-    /// Écrit le modèle Excel d'un cas d'import (factures, commandes, devis, inscriptions, articles, employes, clients, evenements, devis-modele, commandes-modele, factures-modele)
+    /// Écrit le modèle Excel d'un cas d'import (factures, factures-modele, articles, clients)
     Modele {
         cas: String,
-        /// Document « Template » à copier, pour les cas devis-modele, commandes-modele, factures-modele
+        /// Document « Template » à copier, pour le cas factures-modele
         #[arg(long)]
         modele: Option<String>,
         #[arg(long)]
@@ -72,6 +69,41 @@ enum Action {
         #[arg(long)]
         rapport: Option<PathBuf>,
     },
+    /// Exporte une liste de Dokos (clients, articles, devis, commandes, factures, employes) en fichier Excel, en lecture seule
+    Exporter {
+        /// clients, articles, devis, commandes, factures ou employes
+        liste: TypeListe,
+        /// Client : identifiant ou nom (devis, commandes, factures)
+        #[arg(long)]
+        client: Option<String>,
+        /// Groupe de clients ou d'articles, sous-groupes compris
+        #[arg(long)]
+        groupe: Option<String>,
+        /// Territoire des clients
+        #[arg(long)]
+        territoire: Option<String>,
+        /// Début de période (date du document, d'entrée pour les employés)
+        #[arg(long, value_parser = saisie::date)]
+        du: Option<Date>,
+        /// Fin de période
+        #[arg(long, value_parser = saisie::date)]
+        au: Option<Date>,
+        /// Statut : brouillon, impayee, en_retard, payee… (voir l'onglet Export de l'appli)
+        #[arg(long)]
+        statut: Option<String>,
+        /// Texte contenu dans le nom
+        #[arg(long)]
+        texte: Option<String>,
+        /// Inclut les éléments désactivés, annulés ou partis
+        #[arg(long)]
+        inclure_inactifs: bool,
+        /// Articles vendables seulement
+        #[arg(long)]
+        vendables_seulement: bool,
+        /// Fichier .xlsx à écrire ; par défaut Documents\Dokos\exports
+        #[arg(long)]
+        sortie: Option<PathBuf>,
+    },
     /// Documents créés par l'outil en attente de validation ou de publication
     Brouillons,
     /// Diagnostic à copier dans une demande d'aide (réglages sans secret, journal)
@@ -88,22 +120,16 @@ enum Action {
     /// Événements publics et formulaires d'inscription (profil evenements)
     #[command(subcommand)]
     Evenement(Evenement),
-    /// Employés (profil rh)
-    #[command(subcommand)]
-    Employe(Employe),
-    /// Contrats de travail (profil rh)
+    /// Échéances des contrats de travail (profil rh)
     #[command(subcommand)]
     Contrat(Contrat),
-    /// Formats d'impression des contrats : vérification et propositions (profil rh)
-    #[command(subcommand)]
-    Format(Format),
 }
 
 #[derive(Subcommand)]
 enum Connexion {
     /// Teste la connexion d'un profil puis enregistre l'URL, la clé et le secret (demandé au clavier)
     Enregistrer {
-        /// ventes, evenements ou rh
+        /// ventes, evenements ou rh (rh : échéances des contrats et export des employés)
         #[arg(long)]
         profil: Profil,
         /// Racine du site, par exemple https://dokos.exemple.fr
@@ -115,7 +141,7 @@ enum Connexion {
         /// Accepte une URL en http:// (réseau local uniquement)
         #[arg(long)]
         autoriser_http: bool,
-        /// Société Dokos à utiliser s'il y en a plusieurs (obligatoire pour créer des employés)
+        /// Société Dokos à utiliser s'il y en a plusieurs
         #[arg(long)]
         societe: Option<String>,
     },
@@ -188,8 +214,8 @@ struct Vente {
     /// Client : identifiant ou nom
     #[arg(long)]
     client: String,
-    /// ARTICLE=QUANTITÉ, à répéter pour chaque ligne
-    #[arg(long = "ligne", value_name = "ARTICLE=QTE", required = true, value_parser = saisie::ligne)]
+    /// ARTICLE=QUANTITÉ[*PRIX][@DATE], à répéter pour chaque ligne ; *PRIX : prix unitaire HT
+    #[arg(long = "ligne", value_name = "ARTICLE=QTE[*PRIX]", required = true, value_parser = saisie::ligne)]
     lignes: Vec<LigneSaisie>,
     /// Affiche ce qui serait envoyé, sans rien écrire dans Dokos
     #[arg(long)]
@@ -298,119 +324,9 @@ enum Evenement {
 }
 
 #[derive(Subcommand)]
-enum Employe {
-    Chercher {
-        #[arg(required = true, num_args = 1..)]
-        texte: Vec<String>,
-    },
-    /// Crée un employé (société : celle de la configuration)
-    Creer {
-        #[arg(long)]
-        prenom: String,
-        #[arg(long)]
-        nom: String,
-        /// Un genre de Dokos (DocType Gender)
-        #[arg(long)]
-        genre: String,
-        #[arg(long, value_parser = saisie::date)]
-        naissance: Date,
-        #[arg(long, value_parser = saisie::date)]
-        entree: Date,
-        #[arg(long)]
-        email: Option<String>,
-        #[arg(long)]
-        poste: Option<String>,
-        #[arg(long)]
-        simulation: bool,
-    },
-}
-
-#[derive(Subcommand)]
 enum Contrat {
-    /// Vérifie puis crée un contrat de travail ; rien n'est créé s'il y a des erreurs
-    Creer {
-        /// Identifiant de l'employé (HR-EMP-…)
-        #[arg(long)]
-        employe: String,
-        /// Type de contrat Dokos (CDI, CDD…)
-        #[arg(long = "type")]
-        type_contrat: String,
-        /// Poste (DocType Designation)
-        #[arg(long)]
-        poste: String,
-        #[arg(long, value_parser = saisie::date)]
-        entree: Date,
-        #[arg(long, value_parser = saisie::date)]
-        fin: Option<Date>,
-        /// Heures par semaine
-        #[arg(long, value_parser = saisie::heures)]
-        heures: Option<f64>,
-        /// Heures du lundi au dimanche : 6/6/6/6/0/0/0
-        #[arg(long, value_parser = saisie::repartition)]
-        repartition: Option<[f64; 7]>,
-        /// Champ personnalisé : remuneration_brute=2100, à répéter
-        #[arg(long = "champ", value_name = "CHAMP=VALEUR", value_parser = saisie::champ)]
-        champs: Vec<(String, String)>,
-        /// Format d'impression à vérifier avec le contrat
-        #[arg(long)]
-        format: Option<String>,
-        #[arg(long)]
-        simulation: bool,
-        #[arg(long)]
-        autoriser_doublon: bool,
-    },
-    /// Vérifie un contrat existant, et son format d'impression s'il est donné
-    Verifier {
-        id: String,
-        #[arg(long)]
-        format: Option<String>,
-    },
-    /// Télécharge le PDF d'un contrat
-    Pdf {
-        id: String,
-        #[arg(long)]
-        format: String,
-        #[arg(long)]
-        sortie: Option<PathBuf>,
-    },
-    /// Liste des mentions obligatoires utilisée
-    Regles {
-        /// Copie la liste livrée dans le dossier de configuration pour l'adapter
-        #[arg(long)]
-        exporter: bool,
-    },
     /// Fins de contrat proches, CDD sans fin, contrats récents (lecture seule)
     Alertes,
-}
-
-#[derive(Args)]
-struct ContexteFormat {
-    /// Nom du format d'impression
-    format: String,
-    /// Type de contrat imprimé par ce format (CDI, CDD…)
-    #[arg(long = "type")]
-    type_contrat: String,
-    /// Vérifie aussi les mentions du temps partiel
-    #[arg(long)]
-    temps_partiel: bool,
-}
-
-#[derive(Subcommand)]
-enum Format {
-    /// Liste les formats d'impression des contrats
-    Lister,
-    /// Vérifie les mentions obligatoires et la sécurité d'un format
-    Verifier {
-        #[command(flatten)]
-        contexte: ContexteFormat,
-    },
-    /// Écrit un gabarit corrigé dans un fichier, sans rien modifier dans Dokos
-    Proposer {
-        #[command(flatten)]
-        contexte: ContexteFormat,
-        #[arg(long)]
-        sortie: Option<PathBuf>,
-    },
 }
 
 fn main() -> ExitCode {
@@ -467,6 +383,38 @@ fn executer(action: Action) -> Result<(), Erreur> {
                 },
             )
         }
+        Action::Exporter {
+            liste,
+            client,
+            groupe,
+            territoire,
+            du,
+            au,
+            statut,
+            texte,
+            inclure_inactifs,
+            vendables_seulement,
+            sortie,
+        } => {
+            let profil = if liste == TypeListe::Employes { Profil::Rh } else { Profil::Ventes };
+            let (_, dokos) = dokos_config::connecter(profil)?;
+            plus::exporter(
+                &dokos,
+                &plus::DemandeExport {
+                    liste,
+                    client: client.as_deref(),
+                    groupe: groupe.as_deref(),
+                    territoire: territoire.as_deref(),
+                    du,
+                    au,
+                    statut: statut.as_deref(),
+                    texte: texte.as_deref(),
+                    inclure_inactifs,
+                    vendables_seulement,
+                    sortie,
+                },
+            )
+        }
         Action::Brouillons => {
             let ventes = dokos_config::connecter(Profil::Ventes).ok().map(|(_, d)| d);
             let evenements = dokos_config::connecter(Profil::Evenements).ok().map(|(_, d)| d);
@@ -501,9 +449,10 @@ fn executer(action: Action) -> Result<(), Erreur> {
             plus::afficher_retards(&dokos)
         }
         Action::Evenement(evenement) => gerer_evenement(evenement),
-        Action::Employe(employe) => gerer_employe(employe),
-        Action::Contrat(contrat) => gerer_contrat(contrat),
-        Action::Format(format) => gerer_format(format),
+        Action::Contrat(Contrat::Alertes) => {
+            let (_, dokos) = dokos_config::connecter(Profil::Rh)?;
+            plus::afficher_alertes_rh(&dokos)
+        }
     }
 }
 
@@ -684,123 +633,6 @@ fn gerer_evenement(evenement: Evenement) -> Result<(), Erreur> {
         ),
         Evenement::Publier { id } => evenements::publier_evenement(&dokos, &config.url_base(), &id),
         Evenement::Inscrits { id, sortie } => plus::afficher_inscrits(&dokos, &id, sortie),
-    }
-}
-
-fn gerer_employe(employe: Employe) -> Result<(), Erreur> {
-    let (config, dokos) = dokos_config::connecter(Profil::Rh)?;
-    match employe {
-        Employe::Chercher { texte } => {
-            let employes = chercher_employes(&dokos, &texte.join(" "))?;
-            afficher_resultats(employes.iter().map(|e| (e.id.as_str(), e.nom_complet.as_str())));
-            Ok(())
-        }
-        Employe::Creer { prenom, nom, genre, naissance, entree, email, poste, simulation } => rh::creer_un_employe(
-            &dokos,
-            config.societe.as_deref(),
-            &rh::DemandeEmploye {
-                prenom: &prenom,
-                nom: &nom,
-                genre: &genre,
-                naissance,
-                entree,
-                email: email.as_deref(),
-                poste: poste.as_deref(),
-                simulation,
-            },
-        ),
-    }
-}
-
-fn gerer_contrat(contrat: Contrat) -> Result<(), Erreur> {
-    if let Contrat::Regles { exporter } = contrat {
-        if exporter {
-            println!("Liste exportée : {}", dokos_config::exporter_regles()?.display());
-            println!("Faites-la relire, puis renseignez « valide_par » et « valide_le ».");
-            return Ok(());
-        }
-        let (regles, chemin) = dokos_config::charger_regles()?;
-        let source = chemin.map_or("liste livrée avec l'outil".to_owned(), |c| c.display().to_string());
-        let validation = if regles.est_validee() {
-            format!("validée par {} le {}", regles.valide_par, regles.valide_le)
-        } else {
-            "NON validée".to_owned()
-        };
-        println!("Mentions « {} » ({source}) : {validation}", regles.version);
-        for mention in &regles.mentions {
-            println!("  {:<26} {} ({})", mention.id, mention.libelle, mention.reference);
-        }
-        return Ok(());
-    }
-
-    let (config, dokos) = dokos_config::connecter(Profil::Rh)?;
-    let (regles, _) = dokos_config::charger_regles()?;
-    match contrat {
-        Contrat::Creer {
-            employe,
-            type_contrat,
-            poste,
-            entree,
-            fin,
-            heures,
-            repartition,
-            champs,
-            format,
-            simulation,
-            autoriser_doublon,
-        } => rh::creer_un_contrat(
-            &dokos,
-            &regles,
-            config.societe.as_deref(),
-            rh::DemandeContrat {
-                employe: &employe,
-                type_contrat: &type_contrat,
-                poste: &poste,
-                entree,
-                fin,
-                heures,
-                repartition,
-                champs: champs.into_iter().collect::<BTreeMap<_, _>>(),
-                format: format.as_deref(),
-                simulation,
-                si_doublon: si_doublon(autoriser_doublon),
-            },
-        ),
-        Contrat::Verifier { id, format } => rh::verifier_un_contrat(&dokos, &regles, &id, format.as_deref()),
-        Contrat::Pdf { id, format, sortie } => rh::pdf(&dokos, &id, &format, sortie),
-        Contrat::Alertes => plus::afficher_alertes_rh(&dokos, &regles.categories.cdd),
-        Contrat::Regles { .. } => Ok(()),
-    }
-}
-
-fn gerer_format(format: Format) -> Result<(), Erreur> {
-    let (_, dokos) = dokos_config::connecter(Profil::Rh)?;
-    let (regles, _) = dokos_config::charger_regles()?;
-    let contexte = |c: &ContexteFormat| {
-        let mut contexte = regles.contexte_contrat(&c.type_contrat, None);
-        contexte.temps_partiel = c.temps_partiel;
-        contexte
-    };
-    match format {
-        Format::Lister => rh::lister_les_formats(&dokos),
-        Format::Verifier { contexte: c } => {
-            avertir_type_inconnu(&regles, &c.type_contrat, &contexte(&c));
-            rh::verifier_un_format(&dokos, &regles, &c.format, &contexte(&c), None)
-        }
-        Format::Proposer { contexte: c, sortie } => {
-            avertir_type_inconnu(&regles, &c.type_contrat, &contexte(&c));
-            rh::verifier_un_format(&dokos, &regles, &c.format, &contexte(&c), Some(sortie))
-        }
-    }
-}
-
-fn avertir_type_inconnu(regles: &conformite::Regles, type_contrat: &str, contexte: &Contexte) {
-    if !contexte.cdi && !contexte.cdd {
-        println!(
-            "Attention : « {type_contrat} » n'est ni dans cdi ({}) ni dans cdd ({}) : seules les mentions communes sont vérifiées.\n",
-            regles.categories.cdi.join(", "),
-            regles.categories.cdd.join(", ")
-        );
     }
 }
 

@@ -2,16 +2,17 @@
 //! événement, alertes RH, factures en retard. Lecture seule, sauf la
 //! transformation (création d'un brouillon).
 
-use conformite::Regles;
 use dokos_core::brouillons::{Brouillon, brouillons_de_vente, evenements_non_publies};
-use dokos_core::contrat::DOCTYPE_CONTRAT;
 use dokos_core::date::Date;
 use dokos_core::doublon::SiDoublon;
 use dokos_core::evenement::DOCTYPE_EVENEMENT;
 use dokos_core::formulaire::{CHAMPS_DE_BASE, DOCTYPE_INSCRIPTION, questions_possibles};
 use dokos_core::inscription::{lister_evenements, lister_inscrits};
 use dokos_core::meta::lire_meta;
-use dokos_core::suivi::{EcheanceContrat, Echeances, echeances_de_contrats, factures_en_retard, soldes_par_client};
+use dokos_core::suivi::{
+    DOCTYPE_CONTRAT, EcheanceContrat, Echeances, TYPES_CDD, echeances_de_contrats, factures_en_retard,
+    soldes_par_client,
+};
 use dokos_core::transformation::{ResultatTransformation, Transformation, transformer};
 use dokos_core::types::DOCTYPE_FACTURE;
 use dokos_core::{Dokos, Transport};
@@ -171,14 +172,9 @@ fn vue_echeance(base: &str, aujourdhui: Date, e: EcheanceContrat, par_rapport_a_
     }
 }
 
-pub fn alertes_rh<T: Transport>(
-    dokos: &Dokos<T>,
-    base: &str,
-    regles: &Regles,
-    aujourdhui: Date,
-) -> Resultat<AlertesRhVue> {
+pub fn alertes_rh<T: Transport>(dokos: &Dokos<T>, base: &str, aujourdhui: Date) -> Resultat<AlertesRhVue> {
     let Echeances { fins, sans_fin, recents } =
-        echeances_de_contrats(dokos, aujourdhui, HORIZON_RH, &regles.categories.cdd, RECENT_RH).map_err(texte)?;
+        echeances_de_contrats(dokos, aujourdhui, HORIZON_RH, TYPES_CDD, RECENT_RH).map_err(texte)?;
     Ok(AlertesRhVue {
         fins_proches: fins.into_iter().map(|e| vue_echeance(base, aujourdhui, e, true)).collect(),
         cdd_sans_fin: sans_fin.into_iter().map(|e| vue_echeance(base, aujourdhui, e, true)).collect(),
@@ -296,7 +292,7 @@ mod tests {
             200,
             &json!({"data": [{"name": "C-2", "employee_name": "Paul", "date_of_joining": "2026-10-15"}]}),
         );
-        let vue = alertes_rh(&Dokos::new(&faux), BASE, &Regles::par_defaut(), jour()).expect("alertes");
+        let vue = alertes_rh(&Dokos::new(&faux), BASE, jour()).expect("alertes");
         assert_eq!(vue.fins_proches[0].jours, 17);
         assert_eq!(vue.recents[0].jours, 19);
         assert!(vue.cdd_sans_fin.is_empty());

@@ -21,7 +21,7 @@ export function surChangementAssistant(ecouteur: Ecouteur): void {
   ecouteurs.add(ecouteur);
 }
 
-export type Onglet = "accueil" | "ventes" | "formulaires" | "contrats" | "import" | "listes" | "suivi" | "reglages";
+export type Onglet = "accueil" | "ventes" | "formulaires" | "import" | "export" | "suivi" | "reglages";
 
 /** Demande l'affichage d'une section ; `ancre` est l'identifiant d'un bloc à montrer dans celle-ci. */
 export function ouvrirOnglet(onglet: Onglet, ancre?: string): void {
@@ -36,7 +36,7 @@ export function signaler<T>(nom: string, detail: T): void {
 /** Lit une préférence d'affichage ; `defaut` si le stockage est indisponible. */
 export function preference(cle: string, defaut: string): string {
   try {
-    return localStorage.getItem(`dokos-assistant.${cle}`) ?? defaut;
+    return localStorage.getItem(`dokos-asso.${cle}`) ?? defaut;
   } catch {
     return defaut;
   }
@@ -44,7 +44,7 @@ export function preference(cle: string, defaut: string): string {
 
 export function enregistrerPreference(cle: string, valeur: string): void {
   try {
-    localStorage.setItem(`dokos-assistant.${cle}`, valeur);
+    localStorage.setItem(`dokos-asso.${cle}`, valeur);
   } catch {
     // Préférence d'affichage seulement : rien à faire si le stockage est indisponible.
   }

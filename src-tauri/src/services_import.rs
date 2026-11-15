@@ -24,7 +24,7 @@ pub fn cas(nom: &str) -> Resultat<Cas> {
     Cas::depuis_nom(nom).ok_or_else(|| ErreurVue::validation(format!("cas d'import inconnu : {nom}")))
 }
 
-/// Cas disponibles, avec leurs colonnes (hors questions dynamiques des inscriptions).
+/// Cas disponibles, avec leurs colonnes.
 pub fn cas_disponibles() -> Vec<CasVue> {
     let referentiel = Referentiel::default();
     Cas::TOUS
@@ -56,7 +56,7 @@ pub fn generer_un_modele<T: Transport>(
     dossier: &Path,
     aujourdhui: Date,
 ) -> Resultat<PathBuf> {
-    let referentiel = referentiel_pour_generer(dokos, cas, aujourdhui, modele).map_err(texte)?;
+    let referentiel = referentiel_pour_generer(dokos, cas, modele).map_err(texte)?;
     let contexte = ContexteModele {
         url_dokos: url_dokos.to_owned(),
         date: aujourdhui.to_string(),
@@ -91,7 +91,7 @@ fn preparer<T: Transport>(
 ) -> Resultat<Analyse> {
     let tableau = lire_fichier(chemin).map_err(texte)?;
     tableau.verifier_marque(cas).map_err(texte)?;
-    let referentiel = referentiel_pour_fichier(dokos, cas, &tableau, aujourdhui).map_err(texte)?;
+    let referentiel = referentiel_pour_fichier(dokos, cas, &tableau).map_err(texte)?;
     let mut analyse =
         analyser(dokos, cas, &tableau, &referentiel, &options(societe, choix, aujourdhui)).map_err(texte)?;
     verifier(dokos, &mut analyse).map_err(texte)?;
@@ -307,11 +307,12 @@ mod tests {
         assert_eq!(cas("Factures").expect("cas"), Cas::Factures);
         assert!(cas("avoirs").is_err());
         let liste = cas_disponibles();
-        assert_eq!(liste.len(), 11);
+        assert_eq!(liste.len(), 4);
         assert!(liste[0].colonnes.iter().any(|c| c.obligatoire));
-        let modele = liste.iter().find(|c| c.nom == "commandes-modele").expect("cas modèle");
-        assert_eq!(modele.type_modele.as_deref(), Some("commande"));
-        assert!(liste.iter().filter(|c| c.type_modele.is_none()).count() == 8);
+        let modele = liste.iter().find(|c| c.nom == "factures-modele").expect("cas modèle");
+        assert_eq!(modele.type_modele.as_deref(), Some("facture"));
+        assert_eq!(liste.iter().filter(|c| c.type_modele.is_none()).count(), 3);
+        assert!(liste.iter().all(|c| c.nom != "employes" && c.nom != "evenements" && c.nom != "devis"));
         let rapport = chemin_rapport(Path::new("/tmp/Dokos"), Path::new("/x/factures octobre.xlsx"));
         assert!(rapport.ends_with("factures-octobre.resultat.xlsx"));
         let dossier = dossier_test("tableau");

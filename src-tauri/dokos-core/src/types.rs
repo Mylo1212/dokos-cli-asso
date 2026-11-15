@@ -10,6 +10,8 @@ pub const DOCTYPE_ARTICLE: &str = "Item";
 pub const DOCTYPE_DEVIS: &str = "Quotation";
 pub const DOCTYPE_COMMANDE: &str = "Sales Order";
 pub const DOCTYPE_FACTURE: &str = "Sales Invoice";
+/// Employés : lus pour l'export et pour les échéances de contrats.
+pub const DOCTYPE_EMPLOYE: &str = "Employee";
 
 /// Champs demandés à Dokos pour un [`Client`].
 pub const CHAMPS_CLIENT: &[&str] = &["name", "customer_name"];
@@ -113,5 +115,36 @@ mod tests {
         assert_eq!(commande.id, "SAL-ORD-2026-00012");
         assert_eq!(commande.docstatus, 0);
         assert!((commande.total - 512.5).abs() < f64::EPSILON);
+    }
+}
+
+/// Adresse e-mail plausible : une partie locale, un domaine avec un point, rien d'autre.
+pub(crate) fn email_plausible(email: &str) -> bool {
+    match email.split_once('@') {
+        Some((local, domaine)) => {
+            !local.is_empty()
+                && domaine.contains('.')
+                && !domaine.starts_with('.')
+                && !domaine.ends_with('.')
+                && !email.chars().any(|c| c.is_whitespace() || c == ',' || c == ';')
+                && !domaine.contains('@')
+        }
+        None => false,
+    }
+}
+
+#[cfg(test)]
+mod tests_email {
+    use super::email_plausible;
+
+    #[test]
+    fn emails() {
+        assert!(email_plausible("marie.dupont@exemple.fr"));
+        assert!(!email_plausible("marie"));
+        assert!(!email_plausible("@exemple.fr"));
+        assert!(!email_plausible("marie@exemple"));
+        assert!(!email_plausible("marie@.fr"));
+        assert!(!email_plausible("marie dupont@exemple.fr"));
+        assert!(!email_plausible("a@b.fr, c@d.fr"));
     }
 }

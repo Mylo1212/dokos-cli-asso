@@ -5,21 +5,20 @@ import type { ListeVue } from "./api";
 import {
   actionPourErreur,
   dateLisible,
-  demandeContrat,
   demandeEvenement,
   demandeListe,
   demandeVenteModele,
   dossierDe,
   demandeVente,
   erreurVue,
+  filtrerOptions,
   formaterDate,
   livraisonPassee,
   montant,
   nombreDepuisTexte,
+  prixDeLigne,
   texteOuNull,
   titreErreur,
-  totalHeures,
-  type SaisieContrat,
   type SaisieEvenement,
   type SaisieListe,
   type SaisieVenteModele,
@@ -69,7 +68,7 @@ describe("demande de vente", () => {
     date: "2026-11-03",
     echeance: "",
     reference: " LOT-1 ",
-    lignes: [{ article: "REPAS", quantite: "25", livraison: "" }],
+    lignes: [{ article: "REPAS", quantite: "25", livraison: "", prix: "" }],
   };
 
   it("construit une facture", () => {
@@ -78,7 +77,7 @@ describe("demande de vente", () => {
       client: "CUST-2",
       date: "2026-11-03",
       echeance: null,
-      lignes: [{ article: "REPAS", quantite: 25, livraison: null }],
+      lignes: [{ article: "REPAS", quantite: 25, livraison: null, prix: null }],
       reference: "LOT-1",
     });
   });
@@ -87,8 +86,12 @@ describe("demande de vente", () => {
     expect(demandeVente({ ...base, client: null })).toBe("Choisissez un client dans la liste.");
     expect(demandeVente({ ...base, date: "" })).toBe("Renseignez la date de facture.");
     expect(demandeVente({ ...base, lignes: [] })).toBe("Ajoutez au moins une ligne.");
-    expect(demandeVente({ ...base, lignes: [{ article: null, quantite: "1", livraison: "" }] })).toMatch(/Ligne 1/);
-    expect(demandeVente({ ...base, lignes: [{ article: "A", quantite: "0", livraison: "" }] })).toMatch(/quantité/);
+    expect(demandeVente({ ...base, lignes: [{ article: null, quantite: "1", livraison: "", prix: "" }] })).toMatch(
+      /Ligne 1/,
+    );
+    expect(demandeVente({ ...base, lignes: [{ article: "A", quantite: "0", livraison: "", prix: "" }] })).toMatch(
+      /quantité/,
+    );
   });
 
   it("adapte les champs au type", () => {
@@ -96,11 +99,38 @@ describe("demande de vente", () => {
       ...base,
       typeVente: "commande",
       echeance: "2026-12-01",
-      lignes: [{ article: "A", quantite: "1", livraison: "2026-11-05" }],
+      lignes: [{ article: "A", quantite: "1", livraison: "2026-11-05", prix: "" }],
     });
     expect(commande).toMatchObject({ echeance: null, lignes: [{ livraison: "2026-11-05" }], reference: "LOT-1" });
     const devis = demandeVente({ ...base, typeVente: "devis", echeance: "2026-12-01" });
     expect(devis).toMatchObject({ echeance: "2026-12-01", reference: null, lignes: [{ livraison: null }] });
+  });
+
+  it("envoie le prix saisi, ou rien pour garder celui de Dokos", () => {
+    const lignes = [
+      { article: "REPAS", quantite: "25", livraison: "", prix: " 12,50 " },
+      { article: "SALLE", quantite: "1", livraison: "", prix: "" },
+      { article: "OFFERT", quantite: "1", livraison: "", prix: "0" },
+    ];
+    expect(demandeVente({ ...base, lignes })).toMatchObject({
+      lignes: [{ prix: 12.5 }, { prix: null }, { prix: 0 }],
+    });
+  });
+
+  it("refuse un prix illisible, négatif ou démesuré", () => {
+    for (const prix of ["cher", "-1", "99999999"]) {
+      const ligne = { article: "REPAS", quantite: "1", livraison: "", prix };
+      expect(demandeVente({ ...base, lignes: [ligne] }), prix).toBe("Ligne 1 : prix invalide.");
+    }
+  });
+
+  it("retient le prix saisi, sinon l'indicatif", () => {
+    const indicatif = { prix: 18.5, devise: "EUR" };
+    expect(prixDeLigne("", indicatif)).toEqual(indicatif);
+    expect(prixDeLigne("12,5", indicatif)).toEqual({ prix: 12.5, devise: "EUR" });
+    expect(prixDeLigne("12,5", null)).toEqual({ prix: 12.5, devise: "" });
+    expect(prixDeLigne("abc", indicatif)).toBeNull();
+    expect(prixDeLigne("", null)).toBeNull();
   });
 
   it("signale une livraison passée", () => {
@@ -136,45 +166,7 @@ describe("demande d'événement", () => {
   });
 });
 
-describe("demande de contrat", () => {
-  const base: SaisieContrat = {
-    employe: "HR-EMP-1",
-    typeContrat: "CDD",
-    poste: "Animatrice",
-    entree: "2026-12-01",
-    fin: "2027-03-31",
-    heures: "24",
-    repartition: ["6", "6", "6", "6", "", "", ""],
-    champs: { motif_cdd: " Surcroît ", lieu_travail: "" },
-    format: "",
-  };
-
-  it("construit le contrat", () => {
-    expect(demandeContrat(base)).toEqual({
-      employe: "HR-EMP-1",
-      typeContrat: "CDD",
-      poste: "Animatrice",
-      entree: "2026-12-01",
-      fin: "2027-03-31",
-      heures: 24,
-      repartition: [6, 6, 6, 6, 0, 0, 0],
-      champs: { motif_cdd: "Surcroît" },
-      format: null,
-    });
-    expect(demandeContrat({ ...base, repartition: ["", "", "", "", "", "", ""] })).toMatchObject({ repartition: null });
-    expect(totalHeures(base.repartition)).toBe(24);
-  });
-
-  it("refuse les saisies incomplètes", () => {
-    expect(demandeContrat({ ...base, employe: null })).toMatch(/employé/);
-    expect(demandeContrat({ ...base, typeContrat: "" })).toMatch(/type/);
-    expect(demandeContrat({ ...base, poste: " " })).toMatch(/poste/);
-    expect(demandeContrat({ ...base, heures: "beaucoup" })).toMatch(/Heures/);
-    expect(demandeContrat({ ...base, repartition: ["x", "", "", "", "", "", ""] })).toMatch(/Répartition/);
-  });
-});
-
-describe("listes", () => {
+describe("export", () => {
   const factures: ListeVue = {
     nom: "factures",
     libelle: "Factures",
@@ -271,5 +263,37 @@ describe("ventes à partir d'un modèle", () => {
     expect(demandeVenteModele({ ...saisie, quantites: [{ index: 0, texte: "-2" }] })).toContain("invalide");
     expect(demandeVenteModele({ ...saisie, quantites: [{ index: 0, texte: "dix" }] })).toContain("invalide");
     expect(demandeVenteModele({ ...saisie, quantites: [{ index: 0, texte: "0" }] })).toContain("au moins");
+  });
+});
+
+describe("liste déroulante", () => {
+  const clients = [
+    { id: "CUST-1", nom: "Mairie de Crest" },
+    { id: "CUST-2", nom: "CCAS de Crest" },
+    { id: "CUST-3", nom: "Crèche des Amanins" },
+    { id: "CUST-4", nom: "École" },
+  ];
+  const texte = (c: (typeof clients)[number]) => `${c.nom} ${c.id}`;
+
+  it("montre tout sans saisie", () => {
+    expect(filtrerOptions(clients, "", texte)).toEqual({ affiches: clients, restants: 0 });
+    expect(filtrerOptions(clients, "   ", texte).affiches).toHaveLength(4);
+  });
+
+  it("filtre sans tenir compte des accents ni de la casse, début de texte d'abord", () => {
+    const r = filtrerOptions(clients, "crest", texte);
+    expect(r.affiches.map((c) => c.id)).toEqual(["CUST-1", "CUST-2"]);
+    expect(filtrerOptions(clients, "ecole", texte).affiches.map((c) => c.id)).toEqual(["CUST-4"]);
+    expect(filtrerOptions(clients, "cr", texte).affiches.map((c) => c.id)).toEqual(["CUST-3", "CUST-1", "CUST-2"]);
+    expect(filtrerOptions(clients, "cust-3", texte).affiches).toHaveLength(1);
+    expect(filtrerOptions(clients, "zzz", texte)).toEqual({ affiches: [], restants: 0 });
+  });
+
+  it("limite l'affichage et dit combien restent cachés", () => {
+    const beaucoup = Array.from({ length: 450 }, (_, i) => `Client ${i}`);
+    const r = filtrerOptions(beaucoup, "client", (c) => c);
+    expect(r.affiches).toHaveLength(200);
+    expect(r.restants).toBe(250);
+    expect(filtrerOptions(beaucoup, "client 44", (c) => c)).toMatchObject({ restants: 0 });
   });
 });

@@ -11,10 +11,8 @@
 
 pub mod adresse;
 pub mod commun;
-pub mod contrats;
 pub mod conversation;
 pub mod evenements;
-pub mod formats;
 pub mod listes;
 pub mod owui;
 pub mod ventes;

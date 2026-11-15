@@ -11,18 +11,9 @@ use dokos_core::article::{
 };
 use dokos_core::client::Dokos;
 use dokos_core::clientele::{CreationClient, NouveauClient, TypeClient, chercher_client_identique, creer_client};
-use dokos_core::date::{Date, DateHeure};
+use dokos_core::date::Date;
 use dokos_core::doublon::{SiDoublon, chercher_doublons};
-use dokos_core::employe::{CreationEmploye, NouvelEmploye, chercher_employe_identique, creer_employe};
 use dokos_core::erreur::DokosError;
-use dokos_core::evenement::{
-    CreationEvenement, DOCTYPE_EVENEMENT, EvenementExistant, NouvelEvenement, chercher_evenement_identique,
-    creer_evenement,
-};
-use dokos_core::formulaire::{NouveauFormulaire, Question};
-use dokos_core::inscription::{
-    CreationInscription, NouvelleInscription, chercher_inscription_identique, creer_inscription,
-};
 use dokos_core::modele_vente::{DocumentDepuisModele, creer_depuis_modele};
 use dokos_core::recherche::{Candidat as _, Correspondance, normaliser, trouver_article, trouver_client};
 use dokos_core::transport::Transport;
@@ -33,14 +24,14 @@ use crate::ErreurImport;
 use crate::cas::Cas;
 use crate::lecture::{Correspondance as Colonnes, Tableau, associer_colonnes};
 use crate::referentiel::{
-    LISTE_ARTICLES, LISTE_CLIENTS, LISTE_GENRES, LISTE_GROUPES_ARTICLES, LISTE_GROUPES_CLIENTS, LISTE_POSTES,
-    LISTE_TERRITOIRES, LISTE_UNITES, Referentiel,
+    LISTE_ARTICLES, LISTE_CLIENTS, LISTE_GROUPES_ARTICLES, LISTE_GROUPES_CLIENTS, LISTE_TERRITOIRES, LISTE_UNITES,
+    Referentiel,
 };
 
 /// Réglages de l'analyse.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Options {
-    /// Société Dokos (obligatoire pour les employés, utile pour les ventes).
+    /// Société Dokos, utile seulement s'il y en a plusieurs.
     pub societe: Option<String>,
     /// Choix de l'utilisateur pour les valeurs ambiguës : `cle_choix(champ, texte)` → identifiant.
     pub choix: BTreeMap<String, String>,
@@ -116,11 +107,8 @@ pub struct LigneAnalysee {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Prepare {
     Vente(NouveauDocumentVente),
-    Inscription(NouvelleInscription),
     Article(NouvelArticle),
-    Employe(NouvelEmploye),
     Client(NouveauClient),
-    Evenement(NouvelEvenement, NouveauFormulaire),
     VenteModele(Box<DocumentDepuisModele>),
 }
 
@@ -128,11 +116,8 @@ impl Prepare {
     pub fn doctype(&self) -> &'static str {
         match self {
             Self::Vente(v) => v.type_vente().doctype(),
-            Self::Inscription(_) => dokos_core::formulaire::DOCTYPE_INSCRIPTION,
             Self::Article(_) => DOCTYPE_ARTICLE,
-            Self::Employe(_) => dokos_core::employe::DOCTYPE_EMPLOYE,
             Self::Client(_) => DOCTYPE_CLIENT,
-            Self::Evenement(..) => DOCTYPE_EVENEMENT,
             Self::VenteModele(d) => d.modele().type_vente.doctype(),
         }
     }
@@ -258,11 +243,6 @@ impl<T: Transport> Resolveur<'_, T> {
                     id: a.identifiant().to_owned(),
                     libelle: a.nom().to_owned(),
                 }),
-                "événement" => match self.dokos.lire::<EvenementExistant>(DOCTYPE_EVENEMENT, texte) {
-                    Ok(e) => Resolution::Trouve(Candidat { id: e.id, libelle: e.titre }),
-                    Err(DokosError::Introuvable(_)) => Resolution::Aucune,
-                    Err(e) => return Err(e),
-                },
                 _ => Resolution::Aucune,
             };
             self.cache.insert(cle.clone(), resolution);
@@ -329,16 +309,6 @@ fn date_obligatoire(valeur: &str, nom: &str) -> Result<Date, Statut> {
     date(valeur, nom)?.ok_or_else(|| Statut::Invalide(format!("{nom} manquante")))
 }
 
-fn date_heure(valeur: &str, nom: &str) -> Result<Option<DateHeure>, Statut> {
-    let valeur = valeur.trim();
-    if valeur.is_empty() {
-        return Ok(None);
-    }
-    let complet =
-        if valeur.contains(' ') || valeur.contains('T') { valeur.to_owned() } else { format!("{valeur} 00:00") };
-    complet.parse().map(Some).map_err(|_| Statut::Invalide(format!("{nom} « {valeur} » illisible (JJ/MM/AAAA HH:MM)")))
-}
-
 fn nombre(valeur: &str, nom: &str) -> Result<Option<f64>, Statut> {
     let valeur = valeur.trim();
     if valeur.is_empty() {
@@ -398,10 +368,8 @@ pub fn analyser<T: Transport>(
     let mut resolveur = Resolveur { dokos, choix: &options.choix, referentiel, cache: BTreeMap::new() };
     let valeur = |ligne: &LigneAnalysee, colonne: usize| colonnes.valeur(&ligne.valeurs, colonne).to_owned();
     match cas {
-        Cas::Factures | Cas::Commandes | Cas::Devis => {
-            analyser_ventes(cas, &mut analyse, &colonnes, &mut resolveur, options)?
-        }
-        Cas::DevisModele | Cas::CommandesModele | Cas::FacturesModele => {
+        Cas::Factures => analyser_factures(&mut analyse, &colonnes, &mut resolveur, options)?,
+        Cas::FacturesModele => {
             let modele = referentiel.modele.as_ref().ok_or_else(|| {
                 ErreurImport::Modele("modèle Dokos non lu : régénérez le fichier depuis l'appli".to_owned())
             })?;
@@ -438,30 +406,6 @@ pub fn analyser<T: Transport>(
                 document_simple(&mut analyse, i, libelle, resultat);
             }
         }
-        Cas::Inscriptions => {
-            let meta = referentiel.meta_inscription.as_ref().ok_or_else(|| {
-                ErreurImport::Colonnes("structure du formulaire d'inscription non lue dans Dokos".to_owned())
-            })?;
-            for i in 0..analyse.lignes.len() {
-                let ligne = &analyse.lignes[i];
-                let v: Vec<String> = (0..colonnes_cas.len()).map(|c| valeur(ligne, c)).collect();
-                let resultat = (|| -> Result<Prepare, Statut> {
-                    let evenement = obligatoire(&v[0], "Événement")?;
-                    let evenement = identifiant(&mut resolveur, "événement", evenement).map_err(invalide)??;
-                    let mut reponses = BTreeMap::new();
-                    for (c, colonne) in colonnes_cas.iter().enumerate().skip(5) {
-                        if let Some(champ) = &colonne.champ {
-                            reponses.insert(champ.clone(), v[c].clone());
-                        }
-                    }
-                    NouvelleInscription::new(meta, &evenement.id, &v[1], &v[2], &v[3], Some(&v[4]), reponses)
-                        .map(Prepare::Inscription)
-                        .map_err(invalide)
-                })();
-                let libelle = format!("{} {} — {}", v[1], v[2], v[0]);
-                document_simple(&mut analyse, i, libelle, resultat);
-            }
-        }
         Cas::Articles => {
             for i in 0..analyse.lignes.len() {
                 let ligne = &analyse.lignes[i];
@@ -477,38 +421,6 @@ pub fn analyser<T: Transport>(
                     Ok(Prepare::Article(article))
                 })();
                 document_simple(&mut analyse, i, format!("Article {} — {}", v[0], v[1]), resultat);
-            }
-        }
-        Cas::Employes => {
-            let societe = options.societe.as_deref().map(str::trim).filter(|s| !s.is_empty());
-            for i in 0..analyse.lignes.len() {
-                let ligne = &analyse.lignes[i];
-                let v: Vec<String> = (0..7).map(|c| valeur(ligne, c)).collect();
-                let resultat = (|| -> Result<Prepare, Statut> {
-                    let societe = societe.ok_or_else(|| {
-                        Statut::Invalide("société manquante : renseignez-la dans Réglages".to_owned())
-                    })?;
-                    let genre = dans_liste(referentiel, LISTE_GENRES, "Genre", obligatoire(&v[2], "Genre")?)?;
-                    let poste = if v[6].is_empty() {
-                        None
-                    } else {
-                        Some(dans_liste(referentiel, LISTE_POSTES, "Poste", &v[6])?)
-                    };
-                    let employe = NouvelEmploye::new(
-                        &v[0],
-                        &v[1],
-                        &genre,
-                        date_obligatoire(&v[3], "Date de naissance")?,
-                        date_obligatoire(&v[4], "Date d'entrée")?,
-                        societe,
-                    )
-                    .map_err(invalide)?
-                    .avec_email(Some(&v[5]))
-                    .map_err(invalide)?
-                    .avec_poste(poste.as_deref());
-                    Ok(Prepare::Employe(employe))
-                })();
-                document_simple(&mut analyse, i, format!("Employé {} {}", v[0], v[1]), resultat);
             }
         }
         Cas::Clients => {
@@ -547,49 +459,6 @@ pub fn analyser<T: Transport>(
                 document_simple(&mut analyse, i, format!("Client {}", v[0]), resultat);
             }
         }
-        Cas::Evenements => {
-            let meta = referentiel.meta_inscription.as_ref().ok_or_else(|| {
-                ErreurImport::Colonnes("structure du formulaire d'inscription non lue dans Dokos".to_owned())
-            })?;
-            for i in 0..analyse.lignes.len() {
-                let ligne = &analyse.lignes[i];
-                let v: Vec<String> = (0..9).map(|c| valeur(ligne, c)).collect();
-                let resultat = (|| -> Result<Prepare, Statut> {
-                    let debut =
-                        date_heure(&v[1], "Début")?.ok_or_else(|| Statut::Invalide("Début manquant".to_owned()))?;
-                    let fin = date_heure(&v[2], "Fin")?;
-                    let places = nombre(&v[5], "Places")?
-                        .map(|p| {
-                            if p.fract() == 0.0 && p >= 1.0 && p <= f64::from(u32::MAX) {
-                                Ok(p as u32)
-                            } else {
-                                Err(Statut::Invalide(format!("Places « {} » : entier positif attendu", v[5])))
-                            }
-                        })
-                        .transpose()?;
-                    let evenement = NouvelEvenement::new(&v[0], debut, fin)
-                        .map_err(invalide)?
-                        .journee_entiere(oui_non(&v[3], "Journée entière", false)?)
-                        .avec_lieu(Some(&v[4]))
-                        .avec_description(Some(&v[8]))
-                        .avec_places(places)
-                        .map_err(invalide)?
-                        .avec_annulation(oui_non(&v[7], "Annulation possible", false)?);
-                    let questions: Vec<Question> = v[6]
-                        .split([',', ';'])
-                        .map(str::trim)
-                        .filter(|q| !q.is_empty())
-                        .map(|q| match q.strip_suffix('!') {
-                            Some(champ) => Question { champ: champ.trim().to_owned(), obligatoire: true },
-                            None => Question { champ: q.to_owned(), obligatoire: false },
-                        })
-                        .collect();
-                    let formulaire = NouveauFormulaire::new(meta, &questions).map_err(invalide)?;
-                    Ok(Prepare::Evenement(evenement, formulaire))
-                })();
-                document_simple(&mut analyse, i, format!("Événement {} — {}", v[0], v[1]), resultat);
-            }
-        }
     }
     Ok(analyse)
 }
@@ -612,32 +481,18 @@ fn document_simple(analyse: &mut Analyse, i: usize, libelle: String, resultat: R
     });
 }
 
-/// Ventes : les lignes d'un même lot forment un document.
-fn analyser_ventes<T: Transport>(
-    cas: Cas,
+/// Factures : les lignes d'un même lot forment un document.
+fn analyser_factures<T: Transport>(
     analyse: &mut Analyse,
     colonnes: &Colonnes,
     resolveur: &mut Resolveur<'_, T>,
     options: &Options,
 ) -> Result<(), ErreurImport> {
-    let type_vente = match cas {
-        Cas::Factures => TypeVente::Facture,
-        Cas::Commandes => TypeVente::Commande,
-        _ => TypeVente::Devis,
-    };
-    // Indices des colonnes selon le cas : lot, client, date, échéance, article, quantité, prix (suivi de
-    // « Tarif du client »), livraison ligne, référence.
-    let (col_echeance, col_article, col_quantite, col_prix, col_livraison, col_reference) = match type_vente {
-        TypeVente::Facture => (Some(3), 4, 5, 6, None, Some(8)),
-        TypeVente::Commande => (None, 3, 4, 5, Some(7), Some(8)),
-        TypeVente::Devis => (Some(3), 4, 5, 6, None, None),
-    };
+    let type_vente = TypeVente::Facture;
+    // Indices des colonnes : lot, client, date, échéance, article, quantité, prix, tarif du client, référence.
+    let (col_echeance, col_article, col_quantite, col_prix, col_reference) = (3, 4, 5, 6, 8);
     let col_tarif = col_prix + 1;
-    let nom_date = match type_vente {
-        TypeVente::Facture => "Date de facture",
-        TypeVente::Commande => "Date de livraison",
-        TypeVente::Devis => "Date du devis",
-    };
+    let nom_date = "Date de facture";
     struct Lot {
         document: usize,
         client: String,
@@ -657,8 +512,8 @@ fn analyser_ventes<T: Transport>(
         let cle = if lot_texte.is_empty() { format!("ligne {numero}") } else { normaliser(&lot_texte) };
         let client_texte = v(1);
         let date_texte = v(2);
-        let echeance_texte = col_echeance.map(v).unwrap_or_default();
-        let reference_texte = col_reference.map(v).unwrap_or_default();
+        let echeance_texte = v(col_echeance);
+        let reference_texte = v(col_reference);
 
         let document = match lots.get(&cle) {
             Some(lot) => lot.document,
@@ -708,10 +563,9 @@ fn analyser_ventes<T: Transport>(
             let article = identifiant(resolveur, "article", article).map_err(invalide)??;
             let quantite = nombre(&v(col_quantite), "Quantité")?
                 .ok_or_else(|| Statut::Invalide("Quantité manquante".to_owned()))?;
-            let livraison = col_livraison.map(|c| date(&v(c), "Livraison de la ligne")).transpose()?.flatten();
             let prix = nombre(&v(col_prix), "Prix unitaire HT")?;
             let tarif_client = oui_non(&v(col_tarif), "Tarif du client", false)?;
-            LigneVente::new(&article.id, quantite, livraison)
+            LigneVente::new(&article.id, quantite, None)
                 .and_then(|l| l.avec_prix(prix))
                 .and_then(|l| l.avec_tarif_client(tarif_client))
                 .map_err(invalide)
@@ -807,20 +661,10 @@ fn doublon<T: Transport>(dokos: &Dokos<T>, prepare: &Prepare) -> Result<Option<E
             id: d.id.clone(),
             description: format!("{} du {}, {:.2} {}", d.statut(), d.date_document, d.total, d.devise),
         }),
-        Prepare::Inscription(i) => chercher_inscription_identique(dokos, i)?.map(|e| Existant {
-            doctype: prepare.doctype().to_owned(),
-            id: e.id,
-            description: format!("{} {} ({})", e.first_name, e.last_name, e.email),
-        }),
         Prepare::Article(a) => chercher_article_identique(dokos, a)?.map(|e: ArticleExistant| Existant {
             doctype: DOCTYPE_ARTICLE.to_owned(),
             id: e.code,
             description: e.libelle,
-        }),
-        Prepare::Employe(e) => chercher_employe_identique(dokos, e)?.map(|x| Existant {
-            doctype: prepare.doctype().to_owned(),
-            id: x.id,
-            description: x.nom_complet,
         }),
         Prepare::Client(c) => chercher_client_identique(dokos, c)?.map(|x| Existant {
             doctype: DOCTYPE_CLIENT.to_owned(),
@@ -835,11 +679,6 @@ fn doublon<T: Transport>(dokos: &Dokos<T>, prepare: &Prepare) -> Result<Option<E
                 description: format!("{} du {}, {:.2} {}", x.statut(), x.date_document, x.total, x.devise),
             })
         }
-        Prepare::Evenement(e, _) => chercher_evenement_identique(dokos, e)?.map(|x| Existant {
-            doctype: DOCTYPE_EVENEMENT.to_owned(),
-            id: x.id,
-            description: format!("{} ({})", x.titre, if x.published == 1 { "publié" } else { "non publié" }),
-        }),
     })
 }
 
@@ -931,33 +770,13 @@ pub fn creer<T: Transport>(
                 ),
                 Creation::DejaExistant(x) => (false, x.id, "document identique déjà dans Dokos".to_owned()),
             }),
-            Prepare::Inscription(i) => creer_inscription(dokos, i, options.si_doublon).map(|c| match c {
-                CreationInscription::Cree(e) => (true, e.id, "inscription créée".to_owned()),
-                CreationInscription::DejaExistant(e) => (false, e.id, "inscription déjà présente".to_owned()),
-            }),
             Prepare::Article(a) => creer_article(dokos, a, options.si_doublon).map(|c| match c {
                 CreationArticle::Cree(e) => (true, e.code, "article créé, désactivé".to_owned()),
                 CreationArticle::DejaExistant(e) => (false, e.code, "code ou libellé déjà utilisé".to_owned()),
             }),
-            Prepare::Employe(e) => creer_employe(dokos, e, options.si_doublon).map(|c| match c {
-                CreationEmploye::Cree(x) => (true, x.id, "employé créé".to_owned()),
-                CreationEmploye::DejaExistant(x) => (false, x.id, "employé déjà présent".to_owned()),
-            }),
             Prepare::Client(c) => creer_client(dokos, c, options.si_doublon).map(|r| match r {
                 CreationClient::Cree(x) => (true, x.id, "client créé".to_owned()),
                 CreationClient::DejaExistant(x) => (false, x.id, "client de même nom déjà présent".to_owned()),
-            }),
-            Prepare::Evenement(e, f) => creer_evenement(dokos, e, f, options.si_doublon).map(|c| match c {
-                CreationEvenement::Cree { evenement, formulaire } => (
-                    true,
-                    evenement.id,
-                    format!(
-                        "événement créé non publié, formulaire {}{}",
-                        formulaire.nom,
-                        if formulaire.reutilise { " (réutilisé)" } else { "" }
-                    ),
-                ),
-                CreationEvenement::DejaExistant(x) => (false, x.id, "événement identique déjà présent".to_owned()),
             }),
         };
         match resultat {
@@ -1010,7 +829,7 @@ mod tests {
 
     use super::*;
     use crate::lecture::lire_csv;
-    use crate::referentiel::{LISTE_GENRES, LISTE_GROUPES_ARTICLES, LISTE_UNITES};
+    use crate::referentiel::{LISTE_GROUPES_ARTICLES, LISTE_UNITES};
 
     fn options() -> Options {
         Options { societe: Some("Les Amanins".into()), choix: BTreeMap::new(), aujourdhui: None }
@@ -1210,11 +1029,10 @@ mod tests {
     }
 
     #[test]
-    fn articles_employes_clients() {
+    fn articles_et_clients() {
         let mut referentiel = Referentiel::default();
         referentiel.ajouter(LISTE_GROUPES_ARTICLES, vec![("Restauration".into(), "Restauration".into())]);
         referentiel.ajouter(LISTE_UNITES, vec![("Unité".into(), "Unité".into())]);
-        referentiel.ajouter(LISTE_GENRES, vec![("Femme".into(), "Femme".into()), ("Homme".into(), "Homme".into())]);
         let faux = FauxTransport::new();
         let dokos = Dokos::new(&faux);
 
@@ -1227,72 +1045,11 @@ mod tests {
         assert!(matches!(&analyse.lignes[1].statut, Statut::Invalide(_)));
         assert!(matches!(&analyse.lignes[2].statut, Statut::Introuvable { champ, .. } if champ == "Groupe"));
 
-        let employes = lire_csv("Prénom;Nom;Genre;Date de naissance;Date d'entrée;E-mail;Poste\nMarie;Dupont;femme;02/04/1995;01/12/2026;;\nPaul;;Homme;01/01/2000;01/01/2026;;\n").expect("csv");
-        let analyse = analyser(&dokos, Cas::Employes, &employes, &referentiel, &options()).expect("analyse");
-        assert_eq!(analyse.lignes[0].statut, Statut::Pret);
-        assert!(matches!(&analyse.lignes[1].statut, Statut::Invalide(m) if m.contains("nom manquant")));
-        let sans_societe =
-            analyser(&dokos, Cas::Employes, &employes, &referentiel, &Options::default()).expect("analyse");
-        assert!(matches!(&sans_societe.lignes[0].statut, Statut::Invalide(m) if m.contains("société")));
-
         let clients = lire_csv("Nom;Type;Groupe de clients;Territoire;E-mail;Téléphone\nMairie de Crest;;;;mairie@crest.fr;\nX;robot;;;;\n").expect("csv");
         let analyse = analyser(&dokos, Cas::Clients, &clients, &referentiel, &options()).expect("analyse");
         assert_eq!(analyse.lignes[0].statut, Statut::Pret);
         assert!(matches!(&analyse.lignes[1].statut, Statut::Invalide(m) if m.contains("Organisation")));
         assert!(faux.requetes().is_empty(), "aucune lecture nécessaire pour ces cas");
-    }
-
-    #[test]
-    fn inscriptions_et_evenements() {
-        use dokos_core::meta::{Champ, Meta};
-        let champ = |nom: &str, fieldtype: &str, label: &str| Champ {
-            fieldname: nom.into(),
-            fieldtype: fieldtype.into(),
-            label: label.into(),
-            options: String::new(),
-            reqd: 0,
-            hidden: 0,
-            read_only: 0,
-            permlevel: 0,
-        };
-        let meta = Meta {
-            doctype: "Event Registration".into(),
-            champs: vec![
-                champ("event", "Link", "Event"),
-                champ("first_name", "Data", "Prénom"),
-                champ("last_name", "Data", "Nom"),
-                champ("email", "Data", "E-mail"),
-                champ("mobile_number", "Data", "Téléphone"),
-                champ("age", "Int", "Âge"),
-            ],
-        };
-        let mut referentiel = Referentiel::default();
-        referentiel.ajouter(crate::referentiel::LISTE_QUESTIONS, vec![("age".into(), "Âge".into())]);
-        referentiel.meta_inscription = Some(meta);
-
-        let faux = FauxTransport::new();
-        faux.repondre_json(200, &json!({"data": {"name": "EV-1", "subject": "Atelier"}}));
-        faux.repondre(404, "{}");
-        let csv = "Événement;Prénom;Nom;E-mail;Téléphone;Âge\nEV-1;Marie;Dupont;marie@exemple.fr;;12\nEV-9;Paul;Martin;paul@exemple.fr;;\nEV-1;Léa;Roux;pas-un-mail;;\n";
-        let tableau = lire_csv(csv).expect("csv");
-        let analyse =
-            analyser(&Dokos::new(&faux), Cas::Inscriptions, &tableau, &referentiel, &options()).expect("analyse");
-        assert_eq!(analyse.lignes[0].statut, Statut::Pret);
-        let Some(Prepare::Inscription(i)) = &analyse.documents[0].prepare else { panic!() };
-        assert_eq!(i.corps()["age"], "12");
-        assert!(matches!(&analyse.lignes[1].statut, Statut::Introuvable { champ, .. } if champ == "événement"));
-        assert!(matches!(&analyse.lignes[2].statut, Statut::Invalide(_)));
-        assert_eq!(faux.requetes().len(), 2, "EV-1 n'est lu qu'une fois");
-
-        let csv = "Titre;Début;Fin;Journée entière;Lieu;Places;Questions;Annulation possible;Description\nAtelier;14/12/2026 14:00;14/12/2026 17:00;non;Salle;12;age!;oui;Texte\nSoirée;15/12/2026 20:00;;;;;taille;;\n";
-        let tableau = lire_csv(csv).expect("csv");
-        let analyse =
-            analyser(&Dokos::new(&faux), Cas::Evenements, &tableau, &referentiel, &options()).expect("analyse");
-        assert_eq!(analyse.lignes[0].statut, Statut::Pret);
-        let Some(Prepare::Evenement(e, f)) = &analyse.documents[0].prepare else { panic!() };
-        assert_eq!(e.places(), Some(12));
-        assert_eq!(f.champs().len(), 6);
-        assert!(matches!(&analyse.lignes[1].statut, Statut::Invalide(m) if m.contains("taille")));
     }
 
     #[test]
@@ -1308,7 +1065,6 @@ mod tests {
         assert_eq!(nombre("1 250,5", "q").expect("nombre"), Some(1250.5));
         assert!(nombre("abc", "q").is_err());
         assert_eq!(date("2026-11-03 00:00", "d").expect("date").map(|d| d.to_string()), Some("2026-11-03".into()));
-        assert!(date_heure("14/12/2026", "d").expect("date").is_some());
         assert_eq!(cle_choix("client", " Mairie de CREST "), "client|mairie de crest");
     }
 }

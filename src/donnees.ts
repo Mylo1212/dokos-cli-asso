@@ -28,11 +28,31 @@ export function perimerSuivi(): void {
   for (const r of [...SUIVIES, donnees.evenements]) r.perimer();
 }
 
-/** Recherches de clients et d'articles, gardées quelques instants. */
+/** Recherches de clients et d'articles par texte (palette, assistant), gardées quelques instants. */
 export const recherches = {
   clients: avecMemoire(api.chercherClients),
   articles: avecMemoire(api.chercherArticles),
 };
+
+/**
+ * Contenu des listes déroulantes : lu en entier dans Dokos à la première
+ * ouverture, puis gardé deux minutes (`viderListes` après une création).
+ */
+const DUREE_LISTES = 120_000;
+export const listes = {
+  clients: avecMemoire(() => api.listeClients(), DUREE_LISTES, 1),
+  /** Articles vendables, ou ceux d'un groupe (sous-groupes compris). */
+  articles: avecMemoire((groupe: string | null) => api.listeArticles(groupe), DUREE_LISTES, 40),
+  /** Groupes et territoires des filtres d'export, par liste. */
+  references: avecMemoire((liste: string) => api.referencesExport(liste), DUREE_LISTES, 10),
+};
+
+/** Après la création d'un client ou d'un article : les listes seront relues à la prochaine ouverture. */
+export function viderListes(): void {
+  listes.clients.vider();
+  listes.articles.vider();
+  listes.references.vider();
+}
 
 /** Prix indicatif d'un article ; les demandes rapprochées partent ensemble. */
 export const prixIndicatif = parLot(api.prixIndicatifs, (p) => p.article);

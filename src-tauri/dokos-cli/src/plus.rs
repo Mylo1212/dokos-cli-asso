@@ -1,4 +1,4 @@
-//! `dokos articles|modele|importer|brouillons|…` : catalogue, imports et suivi.
+//! `dokos articles|modele|importer|exporter|brouillons|…` : catalogue, imports, exports et suivi.
 
 use std::path::{Path, PathBuf};
 
@@ -9,13 +9,16 @@ use dokos_core::article::{
 use dokos_core::brouillons::{brouillons_de_vente, evenements_non_publies};
 use dokos_core::date::Date;
 use dokos_core::doublon::SiDoublon;
+use dokos_core::export::{FiltresExport, Reference, TypeListe, lire_tableau, retrouver_reference};
 use dokos_core::inscription::lister_inscrits;
+use dokos_core::recherche::{Correspondance, trouver_client};
 use dokos_core::suivi::{
-    contrats_qui_se_terminent, contrats_recents, contrats_sans_fin, factures_en_retard, soldes_par_client,
+    TYPES_CDD, contrats_qui_se_terminent, contrats_recents, contrats_sans_fin, factures_en_retard, soldes_par_client,
 };
 use dokos_core::transformation::{ResultatTransformation, Transformation, transformer};
 use dokos_core::{Dokos, Transport};
 use dokos_import::analyse::{OptionsCreation, StatutCreation, cle_choix};
+use dokos_import::export::{chemin_export, ecrire_classeur};
 use dokos_import::modele::{ContexteModele, nom_fichier_modele};
 use dokos_import::rapport::ecrire_rapport;
 use dokos_import::{
@@ -114,7 +117,7 @@ pub fn generer_un_modele<T: Transport>(
     sortie: Option<PathBuf>,
 ) -> Result<(), Erreur> {
     let aujourdhui = Date::aujourdhui();
-    let referentiel = referentiel_pour_generer(dokos, cas, aujourdhui, modele)?;
+    let referentiel = referentiel_pour_generer(dokos, cas, modele)?;
     let contexte = ContexteModele {
         url_dokos: url_dokos.to_owned(),
         date: aujourdhui.to_string(),
@@ -167,7 +170,7 @@ pub fn importer<T: Transport>(
 ) -> Result<(), Erreur> {
     let tableau = lire_fichier(demande.fichier)?;
     tableau.verifier_marque(demande.cas)?;
-    let referentiel = referentiel_pour_fichier(dokos, demande.cas, &tableau, Date::aujourdhui())?;
+    let referentiel = referentiel_pour_fichier(dokos, demande.cas, &tableau)?;
     let options = Options {
         societe: societe.map(str::to_owned),
         choix: demande.choix.iter().cloned().collect(),
@@ -243,6 +246,76 @@ fn ecrire_rapport_si_demande(
     let octets = ecrire_rapport(analyse, resultats)?;
     std::fs::write(chemin, octets).map_err(|e| Erreur::Fichier(format!("{} : {e}", chemin.display())))?;
     println!("Rapport : {}", chemin.display());
+    Ok(())
+}
+
+// --- Export --------------------------------------------------------------------------
+
+/// Filtres saisis dans le terminal, avant vérification contre Dokos.
+pub struct DemandeExport<'a> {
+    pub liste: TypeListe,
+    pub client: Option<&'a str>,
+    pub groupe: Option<&'a str>,
+    pub territoire: Option<&'a str>,
+    pub du: Option<Date>,
+    pub au: Option<Date>,
+    pub statut: Option<&'a str>,
+    pub texte: Option<&'a str>,
+    pub inclure_inactifs: bool,
+    pub vendables_seulement: bool,
+    pub sortie: Option<PathBuf>,
+}
+
+/// Lit la liste dans Dokos (lecture seule) et l'écrit en classeur Excel.
+pub fn exporter<T: Transport>(dokos: &Dokos<T>, demande: &DemandeExport<'_>) -> Result<(), Erreur> {
+    let liste = demande.liste;
+    let client = match demande.client.map(str::trim).filter(|c| !c.is_empty()) {
+        Some(texte) => Some(match trouver_client(dokos, texte)? {
+            Correspondance::Unique(c) => c.id,
+            Correspondance::Aucune => {
+                return Err(Erreur::Resolution(format!("aucun client actif ne correspond à « {texte} »")));
+            }
+            Correspondance::Plusieurs(candidats) => {
+                let mut message =
+                    format!("plusieurs clients correspondent à « {texte} » ; précisez avec l'identifiant :");
+                for c in &candidats {
+                    message.push_str(&format!("\n  {}  {}", c.id, c.nom));
+                }
+                return Err(Erreur::Resolution(message));
+            }
+        }),
+        None => None,
+    };
+    let filtres = FiltresExport {
+        client,
+        groupe: retrouver_reference(dokos, liste, Reference::Groupe, demande.groupe)
+            .map_err(|e| Erreur::Saisie(e.to_string()))?,
+        territoire: retrouver_reference(dokos, liste, Reference::Territoire, demande.territoire)
+            .map_err(|e| Erreur::Saisie(e.to_string()))?,
+        du: demande.du,
+        au: demande.au,
+        statut: demande.statut.map(str::to_owned),
+        texte: demande.texte.map(str::to_owned),
+        inclure_inactifs: demande.inclure_inactifs,
+        vendables_seulement: demande.vendables_seulement,
+    };
+    filtres.verifier(liste).map_err(|e| Erreur::Saisie(e.to_string()))?;
+    let tableau = lire_tableau(dokos, liste, &filtres).map_err(|e| Erreur::Saisie(e.to_string()))?;
+    let description = filtres.decrire(liste);
+    let jour = Date::aujourdhui();
+    let chemin = match &demande.sortie {
+        Some(c) => c.clone(),
+        None => chemin_export(&dokos_config::dossier_documents()?, liste, jour)?,
+    };
+    if let Some(dossier) = chemin.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dossier).map_err(|e| Erreur::Fichier(format!("{} : {e}", dossier.display())))?;
+    }
+    ecrire_classeur(&chemin, &tableau, &description, jour)?;
+    for avertissement in &tableau.avertissements {
+        println!("Attention : {avertissement}");
+    }
+    println!("{description}");
+    println!("{} ligne(s) exportée(s) : {}", tableau.lignes.len(), chemin.display());
     Ok(())
 }
 
@@ -361,14 +434,14 @@ pub fn afficher_retards<T: Transport>(dokos: &Dokos<T>) -> Result<(), Erreur> {
     Ok(())
 }
 
-pub fn afficher_alertes_rh<T: Transport>(dokos: &Dokos<T>, types_cdd: &[String]) -> Result<(), Erreur> {
+pub fn afficher_alertes_rh<T: Transport>(dokos: &Dokos<T>) -> Result<(), Erreur> {
     let aujourdhui = Date::aujourdhui();
     let fins = contrats_qui_se_terminent(dokos, aujourdhui, 30)?;
     println!("Contrats qui se terminent dans les 30 jours : {}", fins.len());
     for c in &fins {
         println!("  {} {} ({}) — fin le {}", c.id, c.employee_name, c.contract_type, c.relieving_date);
     }
-    let sans_fin = contrats_sans_fin(dokos, types_cdd)?;
+    let sans_fin = contrats_sans_fin(dokos, TYPES_CDD)?;
     println!("CDD sans date de fin : {}", sans_fin.len());
     for c in &sans_fin {
         println!("  {} {} ({}) — entré le {}", c.id, c.employee_name, c.contract_type, c.date_of_joining);

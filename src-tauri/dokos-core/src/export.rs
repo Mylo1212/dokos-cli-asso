@@ -15,13 +15,14 @@ use crate::article::DOCTYPE_GROUPE;
 use crate::client::{Dokos, Filtre, Liste, lister_noms};
 use crate::clientele::{DOCTYPE_GROUPE_CLIENT, DOCTYPE_TERRITOIRE};
 use crate::date::Date;
-use crate::employe::DOCTYPE_EMPLOYE;
 use crate::erreur::DokosError;
 use crate::meta::lire_meta;
 use crate::modele_vente::filtre_sans_modeles;
 use crate::recherche::{Correspondance, normaliser};
 use crate::transport::Transport;
-use crate::types::{DOCTYPE_ARTICLE, DOCTYPE_CLIENT, DOCTYPE_COMMANDE, DOCTYPE_DEVIS, DOCTYPE_FACTURE};
+use crate::types::{
+    DOCTYPE_ARTICLE, DOCTYPE_CLIENT, DOCTYPE_COMMANDE, DOCTYPE_DEVIS, DOCTYPE_EMPLOYE, DOCTYPE_FACTURE,
+};
 
 /// Nombre maximal de lignes d'un export.
 pub const LIGNES_MAX: usize = 10_000;
@@ -693,6 +694,33 @@ pub fn valeurs_possibles<T: Transport>(
     }
 }
 
+/// Groupe ou territoire saisi, retrouvé tel qu'il est écrit dans Dokos : une
+/// seule valeur possible, sinon un message qui dit quoi préciser. `None` si
+/// `texte` est vide. Un filtre qui ne s'applique pas à la liste est rendu tel
+/// quel, pour que [`FiltresExport::verifier`] le refuse avec le bon message.
+pub fn retrouver_reference<T: Transport>(
+    dokos: &Dokos<T>,
+    liste: TypeListe,
+    reference: Reference,
+    texte: Option<&str>,
+) -> Result<Option<String>, ErreurExport> {
+    let Some(texte) = texte.map(str::trim).filter(|t| !t.is_empty()) else { return Ok(None) };
+    let (nom, possible) = match reference {
+        Reference::Groupe => ("groupe", liste.groupe().is_some()),
+        Reference::Territoire => ("territoire", liste.a_territoire()),
+    };
+    if !possible {
+        return Ok(Some(texte.to_owned()));
+    }
+    match choisir_valeur(texte, &valeurs_possibles(dokos, liste, reference)?) {
+        Correspondance::Unique(v) => Ok(Some(v)),
+        Correspondance::Plusieurs(v) => {
+            Err(ErreurExport::Filtre(format!("plusieurs {nom}s correspondent à « {texte} » : {}", v.join(", "))))
+        }
+        Correspondance::Aucune => Err(ErreurExport::Filtre(format!("{nom} « {texte} » introuvable dans Dokos"))),
+    }
+}
+
 /// Retrouve `texte` parmi `valeurs` : égalité (casse, accents et ponctuation
 /// ignorés), sinon valeurs qui le contiennent.
 pub fn choisir_valeur(texte: &str, valeurs: &[String]) -> Correspondance<String> {
@@ -954,5 +982,36 @@ mod tests {
         assert_eq!(faux.requetes()[0].chemin, "/api/resource/Territory");
         assert!(valeurs_possibles(&dokos, TypeListe::Factures, Reference::Groupe).expect("liste").is_empty());
         assert_eq!(faux.requetes().len(), 1);
+    }
+
+    #[test]
+    fn reference_retrouvee_ou_expliquee() {
+        let faux = FauxTransport::new();
+        let dokos = Dokos::new(&faux);
+        let groupes = || json!({"data": [{"name": "Associations"}, {"name": "Associations sportives"}, {"name": "Collectivités"}]});
+
+        faux.repondre_json(200, &groupes());
+        let trouve = retrouver_reference(&dokos, TypeListe::Clients, Reference::Groupe, Some(" collectivites "));
+        assert_eq!(trouve, Ok(Some("Collectivités".to_owned())));
+
+        faux.repondre_json(200, &groupes());
+        let ambigu = retrouver_reference(&dokos, TypeListe::Clients, Reference::Groupe, Some("asso"));
+        assert!(
+            matches!(ambigu, Err(ErreurExport::Filtre(m)) if m.contains("plusieurs groupes") && m.contains("Associations sportives"))
+        );
+
+        faux.repondre_json(200, &groupes());
+        let inconnu = retrouver_reference(&dokos, TypeListe::Clients, Reference::Groupe, Some("Entreprises"));
+        assert!(matches!(inconnu, Err(ErreurExport::Filtre(m)) if m.contains("introuvable")));
+
+        // Vide : aucun filtre, aucune requête. Filtre hors liste : rendu tel quel, refusé plus tard par `verifier`.
+        let appels = faux.requetes().len();
+        assert_eq!(retrouver_reference(&dokos, TypeListe::Clients, Reference::Groupe, Some("  ")), Ok(None));
+        assert_eq!(retrouver_reference(&dokos, TypeListe::Clients, Reference::Groupe, None), Ok(None));
+        assert_eq!(
+            retrouver_reference(&dokos, TypeListe::Factures, Reference::Groupe, Some("X")),
+            Ok(Some("X".to_owned()))
+        );
+        assert_eq!(faux.requetes().len(), appels);
     }
 }

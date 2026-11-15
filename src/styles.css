@@ -628,6 +628,40 @@ label.case {
 
 /* --- Suggestions --- */
 
+/* Liste déroulante : le champ et sa flèche. */
+.recherche {
+  position: relative;
+}
+
+.liste-saisie {
+  position: relative;
+}
+
+.liste-saisie input {
+  padding-right: 32px;
+}
+
+.liste-fleche {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--texte-doux);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.liste-fleche:hover {
+  background: var(--accent-doux);
+  color: var(--texte);
+}
+
 .suggestions {
   position: absolute;
   top: 100%;
@@ -715,13 +749,13 @@ label.case {
 
 .ligne {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 110px 32px;
+  grid-template-columns: minmax(0, 1fr) 100px 130px 32px;
   gap: 10px;
   align-items: end;
 }
 
 .ligne.avec-livraison {
-  grid-template-columns: minmax(0, 1fr) 110px 150px 32px;
+  grid-template-columns: minmax(0, 1fr) 100px 130px 150px 32px;
 }
 
 /* --- Puces, alertes et résultats --- */

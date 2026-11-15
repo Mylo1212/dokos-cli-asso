@@ -2,7 +2,6 @@
 // mise en forme. Testées avec Vitest ; l'interface ne fait que les brancher.
 
 import type {
-  DemandeContrat,
   DemandeEvenement,
   DemandeListe,
   DemandeVente,
@@ -109,7 +108,12 @@ export interface LigneSaisie {
   article: string | null;
   quantite: string;
   livraison: string;
+  /** Prix unitaire hors taxes saisi ; vide : prix de Dokos. */
+  prix: string;
 }
+
+/** Prix unitaire maximal accepté par Rust (garde-fou contre une faute de frappe). */
+export const PRIX_MAX = 10_000_000;
 
 export interface SaisieVente {
   typeVente: TypeVente;
@@ -140,10 +144,13 @@ export function demandeVente(saisie: SaisieVente): DemandeVente | string {
     if (!ligne.article) return `Ligne ${i + 1} : choisissez un article dans la liste.`;
     const quantite = nombreDepuisTexte(ligne.quantite);
     if (quantite === null || Number.isNaN(quantite) || quantite <= 0) return `Ligne ${i + 1} : quantité invalide.`;
+    const prix = nombreDepuisTexte(ligne.prix);
+    if (prix !== null && (Number.isNaN(prix) || prix < 0 || prix > PRIX_MAX)) return `Ligne ${i + 1} : prix invalide.`;
     lignes.push({
       article: ligne.article,
       quantite,
       livraison: saisie.typeVente === "commande" ? texteOuNull(ligne.livraison) : null,
+      prix,
     });
   }
   return {
@@ -194,58 +201,12 @@ export function demandeEvenement(saisie: SaisieEvenement): DemandeEvenement | st
   };
 }
 
-export interface SaisieContrat {
-  employe: string | null;
-  typeContrat: string;
-  poste: string;
-  entree: string;
-  fin: string;
-  heures: string;
-  repartition: string[];
-  champs: Record<string, string>;
-  format: string;
-}
-
-export function demandeContrat(saisie: SaisieContrat): DemandeContrat | string {
-  if (!saisie.employe) return "Choisissez ou créez l'employé.";
-  if (!saisie.typeContrat) return "Choisissez le type de contrat.";
-  if (!texteOuNull(saisie.poste)) return "Renseignez le poste.";
-  if (!saisie.entree) return "Renseignez la date d'entrée.";
-  const heures = nombreDepuisTexte(saisie.heures);
-  if (heures !== null && Number.isNaN(heures)) return "Heures hebdomadaires invalides.";
-  const repartition = saisie.repartition.map((j) => nombreDepuisTexte(j) ?? 0);
-  if (repartition.some(Number.isNaN)) return "Répartition des heures invalide.";
-  const champs: Record<string, string> = {};
-  for (const [nom, valeur] of Object.entries(saisie.champs)) {
-    if (valeur.trim()) champs[nom] = valeur.trim();
-  }
-  return {
-    employe: saisie.employe,
-    typeContrat: saisie.typeContrat,
-    poste: saisie.poste.trim(),
-    entree: saisie.entree,
-    fin: texteOuNull(saisie.fin),
-    heures,
-    repartition: repartition.some((v) => v > 0) ? repartition : null,
-    champs,
-    format: texteOuNull(saisie.format),
-  };
-}
-
-/** Total des heures saisies par jour. */
-export function totalHeures(jours: string[]): number {
-  return jours.reduce((somme, j) => {
-    const n = nombreDepuisTexte(j);
-    return somme + (n === null || Number.isNaN(n) ? 0 : n);
-  }, 0);
-}
-
 /** Identifiant d'un choix d'ambiguïté d'import : même clé que côté Rust. */
 export function cleChoixImport(champ: string, texte: string): string {
   return `${champ}|${texte.trim().toLowerCase()}`;
 }
 
-/** Saisies de l'onglet Listes, telles qu'elles sont à l'écran. */
+/** Saisies de l'onglet Export, telles qu'elles sont à l'écran. */
 export interface SaisieListe {
   client: string | null;
   groupe: string;
@@ -338,11 +299,49 @@ export function correspond(texte: string, recherche: string): boolean {
     .every((mot) => cible.includes(mot));
 }
 
+/** Nombre de lignes montrées au plus dans une liste déroulante. */
+export const OPTIONS_MAX = 200;
+
+/**
+ * Éléments d'une liste déroulante qui correspondent à la saisie (tous si elle
+ * est vide), au plus `max` ; `restants` dit combien d'autres sont cachés.
+ * Les éléments dont le texte commence par la saisie passent en premier.
+ */
+export function filtrerOptions<T>(
+  elements: T[],
+  saisie: string,
+  texteDe: (element: T) => string,
+  max = OPTIONS_MAX,
+): { affiches: T[]; restants: number } {
+  const cherche = saisie.trim() !== "";
+  let trouves = cherche ? elements.filter((e) => correspond(texteDe(e), saisie)) : elements;
+  if (cherche) {
+    const debut = sansAccents(saisie.trim());
+    const commence = (e: T) => sansAccents(texteDe(e)).startsWith(debut);
+    trouves = [...trouves.filter(commence), ...trouves.filter((e) => !commence(e))];
+  }
+  return { affiches: trouves.slice(0, max), restants: Math.max(0, trouves.length - max) };
+}
+
 /** Ligne d'un document en cours de saisie, avec son prix indicatif s'il est connu. */
 export interface LigneResumee {
   article: string | null;
   quantite: string;
   prix: { prix: number; devise: string } | null;
+}
+
+/**
+ * Prix retenu pour une ligne : le prix saisi s'il y en a un (valide), sinon le
+ * prix indicatif de Dokos. `saisi` illisible ou négatif : pas de prix.
+ */
+export function prixDeLigne(
+  saisi: string,
+  indicatif: { prix: number; devise: string } | null,
+): { prix: number; devise: string } | null {
+  const n = nombreDepuisTexte(saisi);
+  if (n === null) return indicatif;
+  if (Number.isNaN(n) || n < 0) return null;
+  return { prix: n, devise: indicatif?.devise ?? "" };
 }
 
 /** Résumé d'une vente en cours de saisie : ce que la barre d'action affiche. */
@@ -365,8 +364,9 @@ export function resumeVente(lignes: LigneResumee[]): ResumeVente {
     const quantite = nombreDepuisTexte(ligne.quantite);
     if (!ligne.prix || quantite === null || Number.isNaN(quantite) || quantite <= 0) continue;
     // Un total ne mélange pas deux devises : seules les lignes de la première comptent.
-    if (devise !== "" && ligne.prix.devise !== devise) continue;
-    devise = ligne.prix.devise;
+    // Un prix saisi sans devise connue prend celle des autres lignes.
+    if (devise !== "" && ligne.prix.devise !== "" && ligne.prix.devise !== devise) continue;
+    devise = devise || ligne.prix.devise;
     total += quantite * ligne.prix.prix;
     comptees += 1;
   }

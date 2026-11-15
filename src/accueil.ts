@@ -235,9 +235,8 @@ export function creerAccueil(panneau: HTMLElement): void {
       raccourci("Commande", "Une prestation confirmée", "ventes", vente("commande")),
       raccourci("Facture", "À valider ensuite dans Dokos", "ventes", vente("facture")),
       raccourci("Événement", "Avec son formulaire d'inscription", "formulaires", vers("formulaires")),
-      raccourci("Contrat de travail", "Employé, contrat vérifié, PDF", "contrats", vers("contrats")),
-      raccourci("Import Excel", "Plusieurs documents d'un coup", "import", vers("import")),
-      raccourci("Liste Excel", "Clients, articles, ventes, employés", "listes", vers("listes")),
+      raccourci("Import Excel", "Factures, articles, clients", "import", vers("import")),
+      raccourci("Export Excel", "Clients, articles, ventes, employés", "export", vers("export")),
     ),
     zoneDerniers,
     h(

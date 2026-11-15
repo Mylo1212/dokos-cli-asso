@@ -38,32 +38,23 @@ const RECHERCHE_MAX: usize = 140;
 pub enum Onglet {
     Ventes,
     Import,
-    Listes,
+    Export,
     Suivi,
     Formulaires,
-    Contrats,
     Reglages,
 }
 
 impl Onglet {
-    pub const TOUS: [Onglet; 7] = [
-        Onglet::Ventes,
-        Onglet::Import,
-        Onglet::Listes,
-        Onglet::Suivi,
-        Onglet::Formulaires,
-        Onglet::Contrats,
-        Onglet::Reglages,
-    ];
+    pub const TOUS: [Onglet; 6] =
+        [Onglet::Ventes, Onglet::Import, Onglet::Export, Onglet::Suivi, Onglet::Formulaires, Onglet::Reglages];
 
     pub fn nom(self) -> &'static str {
         match self {
             Self::Ventes => "ventes",
             Self::Import => "import",
-            Self::Listes => "listes",
+            Self::Export => "export",
             Self::Suivi => "suivi",
             Self::Formulaires => "formulaires",
-            Self::Contrats => "contrats",
             Self::Reglages => "reglages",
         }
     }
@@ -72,10 +63,9 @@ impl Onglet {
         match self {
             Self::Ventes => "Ventes",
             Self::Import => "Import",
-            Self::Listes => "Listes",
+            Self::Export => "Export",
             Self::Suivi => "Suivi",
             Self::Formulaires => "Formulaires",
-            Self::Contrats => "Contrats",
             Self::Reglages => "Réglages",
         }
     }
@@ -84,20 +74,21 @@ impl Onglet {
     fn role(self) -> &'static str {
         match self {
             Self::Ventes => "devis, commandes et factures clients en brouillon ; catalogue d'articles",
-            Self::Import => "créer en masse depuis un tableau Excel (modèle généré, analyse, création tout ou rien)",
-            Self::Listes => "fichier Excel des clients, articles, devis, commandes, factures ou employés, avec filtres",
+            Self::Import => {
+                "créer en masse depuis un tableau Excel (factures, factures à partir d'un modèle, articles, clients ; modèle généré, analyse, création tout ou rien)"
+            }
+            Self::Export => "fichier Excel des clients, articles, devis, commandes, factures ou employés, avec filtres",
             Self::Suivi => {
-                "brouillons en attente, devis → commande → facture, inscrits d'un événement, alertes RH, factures en retard"
+                "brouillons en attente, devis → commande → facture, inscrits d'un événement, échéances des contrats de travail, factures en retard"
             }
             Self::Formulaires => "événement public et formulaire d'inscription, créés non publiés",
-            Self::Contrats => "employé, contrat de travail vérifié, PDF, contrôle du format d'impression",
             Self::Reglages => "adresse de Dokos, clés API par profil, assistant IA, diagnostic",
         }
     }
 
     /// Onglet dont le formulaire peut être pré-rempli à partir d'une demande.
     pub fn pre_remplissable(self) -> bool {
-        matches!(self, Self::Ventes | Self::Listes | Self::Formulaires | Self::Contrats)
+        matches!(self, Self::Ventes | Self::Export | Self::Formulaires)
     }
 }
 
@@ -168,7 +159,7 @@ struct RechercheBrute {
 
 const SCHEMA: &str = r#"{
   "reponse": "texte affiché à l'utilisateur",
-  "onglet": "ventes" | "import" | "listes" | "suivi" | "formulaires" | "contrats" | "reglages" | null,
+  "onglet": "ventes" | "import" | "export" | "suivi" | "formulaires" | "reglages" | null,
   "etapes": ["étape courte de la procédure dans l'appli"],
   "pre_remplir": true | false,
   "demande": "demande complète et autonome à pré-remplir" | null,
@@ -191,7 +182,7 @@ fn consignes(aujourdhui: Date, courant: Option<Onglet>) -> String {
         .join("\n");
     let ici = courant.map_or("aucun".to_owned(), |o| format!("{} ({})", o.nom(), o.libelle()));
     format!(
-        "Tu es l'assistant de « Dokos Assistant », une application de bureau qui prépare des documents dans \
+        "Tu es l'assistant de « Dokos Asso », une application de bureau qui prépare des documents dans \
 Dokos, le logiciel de gestion de l'utilisateur. Tu qualifies sa demande, tu lui indiques l'onglet où la faire \
 et tu expliques la procédure.\n\
 Onglets de l'application :\n{onglets}\n\
@@ -210,7 +201,7 @@ toutes les informations données dans la conversation, sans rien ajouter.\n\
 demande une recherche dans Dokos avec \"recherche\" et laisse \"reponse\" vide : tu recevras les fiches trouvées, \
 puis tu répondras. Une seule recherche par message.\n\
 - Des données de Dokos, tu ne connais que les fiches reçues par une recherche, dans ce message ou les précédents : \
-n'invente jamais un client, un article, un montant ni un nombre. Pour des listes ou des totaux, renvoie vers Listes \
+n'invente jamais un client, un article, un montant ni un nombre. Pour des listes ou des totaux, renvoie vers Export \
 ou Suivi.\n\
 - Les fiches sont affichées à l'utilisateur sous ta réponse : résume l'essentiel sans tout recopier. Si un client \
 ou un article trouvé sert ensuite à pré-remplir, reprends son identifiant exact dans \"demande\".\n\
@@ -430,8 +421,8 @@ mod tests {
         let messages = envoyes(&faux);
         let systeme = messages[0]["content"].as_str().unwrap_or_default();
         assert!(systeme.contains("jeudi 2026-11-05"));
-        assert!(systeme.contains("Guide de l'utilisateur — Dokos Assistant"), "guide joint");
-        assert!(systeme.contains("listes (Listes)"));
+        assert!(systeme.contains("Guide de l'utilisateur — Dokos Asso"), "guide joint");
+        assert!(systeme.contains("export (Export)"));
         assert_eq!(messages[1], json!({"role": "user", "content": "je dois facturer des repas"}));
     }
 
@@ -511,9 +502,10 @@ mod tests {
     #[test]
     fn onglets() {
         assert_eq!("Réglages".parse::<Onglet>(), Ok(Onglet::Reglages));
-        assert_eq!(" listes ".parse::<Onglet>(), Ok(Onglet::Listes));
+        assert_eq!(" export ".parse::<Onglet>(), Ok(Onglet::Export));
+        assert!("contrats".parse::<Onglet>().is_err());
         assert!("Comptabilité".parse::<Onglet>().is_err());
-        assert!(Onglet::Contrats.pre_remplissable() && !Onglet::Import.pre_remplissable());
+        assert!(Onglet::Export.pre_remplissable() && !Onglet::Import.pre_remplissable());
     }
 
     fn fiche_mairie() -> Fiche {

@@ -8,7 +8,6 @@ publish.workspace = true
 
 [dependencies]
 assistant-core.workspace = true
-conformite.workspace = true
 dirs.workspace = true
 dokos-core.workspace = true
 keyring.workspace = true

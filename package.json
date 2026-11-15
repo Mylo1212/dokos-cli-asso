@@ -1,7 +1,7 @@
 {
-  "name": "dokos-assistant",
+  "name": "dokos-asso",
   "private": true,
-  "version": "0.2.3",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

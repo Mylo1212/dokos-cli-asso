@@ -27,8 +27,8 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
           components: clippy, rustfmt
       - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --exclude dokos-assistant --all-targets --all-features --locked -- -D warnings
-      - run: cargo test --workspace --exclude dokos-assistant --all-features --locked
+      - run: cargo clippy --workspace --exclude dokos-asso --all-targets --all-features --locked -- -D warnings
+      - run: cargo test --workspace --exclude dokos-asso --all-features --locked
 
   # Interface : types, tests Vitest, mise en forme.
   frontend:
@@ -45,7 +45,7 @@ jobs:
       - run: npm test
       - run: npm run build
 
-  # Appli Tauri : frontend construit puis crate dokos-assistant.
+  # Appli Tauri : frontend construit puis crate dokos-asso.
   app:
     runs-on: windows-latest
     steps:
@@ -59,9 +59,9 @@ jobs:
           components: clippy
       - run: npm ci
       - run: npm run build
-      - run: cargo clippy -p dokos-assistant --all-targets --locked -- -D warnings
+      - run: cargo clippy -p dokos-asso --all-targets --locked -- -D warnings
         working-directory: src-tauri
-      - run: cargo test -p dokos-assistant --locked
+      - run: cargo test -p dokos-asso --locked
         working-directory: src-tauri
 
   # Vulnérabilités connues dans les dépendances Rust et npm.

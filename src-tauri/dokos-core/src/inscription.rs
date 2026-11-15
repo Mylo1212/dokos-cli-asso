@@ -79,7 +79,7 @@ impl NouvelleInscription {
         if nom.is_empty() {
             return Err(ErreurInscription::NomVide);
         }
-        if !crate::employe::email_plausible(&email) {
+        if !crate::types::email_plausible(&email) {
             return Err(ErreurInscription::EmailInvalide(email));
         }
         let possibles = questions_possibles(meta);

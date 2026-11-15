@@ -3,7 +3,7 @@
 
 import { api } from "./api";
 import { ouvrirOnglet } from "./etat";
-import { actionPourErreur, erreurVue, formaterDate, titreErreur } from "./valeurs";
+import { actionPourErreur, erreurVue, filtrerOptions, formaterDate, titreErreur } from "./valeurs";
 
 export { message, montant, nombreDepuisTexte, texteOuNull } from "./valeurs";
 
@@ -172,14 +172,7 @@ export async function copier(texte: string): Promise<boolean> {
   }
 }
 
-/**
- * Attente après la dernière frappe avant d'interroger Dokos. Les connexions
- * restent ouvertes et les réponses récentes sont gardées (donnees.ts) : un
- * délai court suffit à ne pas envoyer une requête par lettre.
- */
-const DELAI_RECHERCHE = 180;
-
-// Un seul écouteur global ferme les suggestions ouvertes quand on clique ailleurs.
+// Un seul écouteur global ferme les listes ouvertes quand on clique ailleurs.
 document.addEventListener("click", (e) => {
   for (const liste of document.querySelectorAll<HTMLElement>(".recherche .suggestions:not([hidden])")) {
     if (!liste.parentElement?.contains(e.target as Node)) liste.hidden = true;
@@ -187,34 +180,73 @@ document.addEventListener("click", (e) => {
 });
 
 /**
- * Champ de recherche avec suggestions venant de Dokos. Une fois un élément
- * choisi, le champ est remplacé par une étiquette effaçable. Navigation au
- * clavier : flèches, Entrée, Échap.
+ * Liste déroulante des éléments de Dokos (clients, articles, groupes…) : elle
+ * s'ouvre au clic, au focus ou par la flèche et montre tout, et la frappe
+ * filtre sur place (accents et casse ignorés). Les éléments sont lus une fois
+ * par `lire` (l'appelant les garde en mémoire), jamais à chaque lettre. Une
+ * fois un élément choisi, le champ est remplacé par une étiquette effaçable.
+ * Navigation au clavier : flèches, Entrée, Échap.
  */
-export function recherche<T>(options: {
+export function listeDeroulante<T>(options: {
   placeholder: string;
-  chercher: (texte: string) => Promise<T[]>;
+  /**
+   * Lit tous les éléments dans Dokos. Appelée à chaque ouverture de la liste :
+   * c'est à l'appelant de garder la réponse en mémoire (`listes` de donnees.ts).
+   */
+  lire: () => Promise<T[]>;
+  /** Clé de ce que `lire` renvoie (un groupe choisi, par exemple) : si elle change, la liste est relue. */
+  cle?: () => string;
   libelle: (element: T) => string;
   identifiant: (element: T) => string;
   surChoix: (element: T | null) => void;
 }): {
   racine: HTMLDivElement;
   choisir: (element: T | null) => void;
-  saisir: (texte: string, chercher?: boolean) => void;
+  /** Remet le champ avec un texte, sans rien choisir ; avec `ouvrir`, montre aussi les éléments qui lui correspondent. */
+  saisir: (texte: string, ouvrir?: boolean) => void;
+  /** Texte tapé et non choisi (vide si un élément est choisi). */
+  texteSaisi: () => string;
   /** Place le curseur dans le champ (ou sur le bouton « Changer » si un élément est choisi). */
   focus: () => void;
 } {
-  const racine = h("div", { class: "recherche" });
-  const input = saisie({ placeholder: options.placeholder, autocomplete: "off", role: "combobox" });
+  const racine = h("div", { class: "recherche liste-deroulante" });
+  const input = saisie({
+    placeholder: options.placeholder,
+    autocomplete: "off",
+    role: "combobox",
+    "aria-expanded": "false",
+    "aria-autocomplete": "list",
+  });
+  const fleche = h(
+    "button",
+    {
+      type: "button",
+      class: "liste-fleche",
+      title: "Afficher la liste",
+      "aria-label": "Afficher la liste",
+      tabindex: "-1",
+    },
+    "▾",
+  );
+  const champSaisie = h("div", { class: "liste-saisie" }, input, fleche);
   const liste = h("div", { class: "suggestions", hidden: true, role: "listbox" });
-  let minuteur: number | undefined;
-  let demande = 0;
+  let elements: T[] | null = null;
+  let cleLue: string | null = null;
+  let lectures = 0;
+  let enLecture = false;
+  let message = "";
+
+  const texteDe = (e: T) => `${options.libelle(e)} ${options.identifiant(e)}`;
+  const afficher = (visible: boolean) => {
+    liste.hidden = !visible;
+    input.setAttribute("aria-expanded", String(visible));
+  };
 
   const choisir = (element: T | null) => {
-    liste.hidden = true;
+    afficher(false);
     if (element === null) {
       input.value = "";
-      racine.replaceChildren(input, liste);
+      racine.replaceChildren(champSaisie, liste);
     } else {
       const etiquette = h(
         "div",
@@ -236,46 +268,87 @@ export function recherche<T>(options: {
     const tous = boutons();
     if (tous.length === 0) return;
     const indice = depuis instanceof HTMLButtonElement ? tous.indexOf(depuis) : -1;
-    const suivant = tous[(indice + pas + tous.length) % tous.length];
-    suivant?.focus();
+    tous[(indice + pas + tous.length) % tous.length]?.focus();
   };
 
-  input.addEventListener("input", () => {
-    window.clearTimeout(minuteur);
-    const texte = input.value.trim();
-    if (texte.length < 2) {
-      liste.hidden = true;
+  /** Redessine la liste d'après la saisie et les éléments déjà lus. */
+  const dessiner = () => {
+    if (elements === null) {
+      liste.replaceChildren(h("div", { class: "vide" }, message || "Lecture de Dokos…"));
       return;
     }
-    minuteur = window.setTimeout(async () => {
-      const numero = ++demande;
-      try {
-        const resultats = await options.chercher(texte);
-        if (numero !== demande) return;
-        liste.replaceChildren(
-          ...(resultats.length === 0
-            ? [h("div", { class: "vide" }, "Aucun résultat dans Dokos")]
-            : resultats.map((r) => {
-                const b = h(
-                  "button",
-                  { type: "button", role: "option" },
-                  h("span", {}, options.libelle(r)),
-                  h("span", { class: "id" }, options.identifiant(r)),
-                );
-                b.addEventListener("click", () => choisir(r));
-                return b;
-              })),
-        );
-      } catch (e) {
-        liste.replaceChildren(h("div", { class: "vide" }, erreurVue(e).message));
-      }
-      liste.hidden = false;
-    }, DELAI_RECHERCHE);
+    const { affiches, restants } = filtrerOptions(elements, input.value, texteDe);
+    liste.replaceChildren(
+      ...(affiches.length === 0
+        ? [h("div", { class: "vide" }, elements.length === 0 ? "Aucun élément dans Dokos" : "Aucun résultat")]
+        : affiches.map((r) => {
+            const b = h(
+              "button",
+              { type: "button", role: "option" },
+              h("span", {}, options.libelle(r)),
+              h("span", { class: "id" }, options.identifiant(r)),
+            );
+            b.addEventListener("click", () => choisir(r));
+            return b;
+          })),
+      ...(restants > 0 ? [h("div", { class: "vide" }, `${restants} autres : continuez à taper pour affiner`)] : []),
+    );
+  };
+
+  /** Lit (ou relit) les éléments ; une erreur est montrée dans la liste tant qu'il n'y a rien à montrer. */
+  const charger = () => {
+    const numero = ++lectures;
+    enLecture = true;
+    message = "";
+    options
+      .lire()
+      .then((lus) => {
+        if (numero === lectures) elements = lus;
+      })
+      .catch((e: unknown) => {
+        if (numero === lectures && elements === null) message = erreurVue(e).message;
+      })
+      .finally(() => {
+        if (numero !== lectures) return;
+        enLecture = false;
+        if (!liste.hidden) dessiner();
+      });
+  };
+
+  /** Ouvre la liste ; `relire` : redemande les éléments (la mémoire de l'appelant évite les appels inutiles). */
+  const ouvrir = (relire: boolean) => {
+    const cle = options.cle?.() ?? "";
+    if (cle !== cleLue) {
+      elements = null;
+      cleLue = cle;
+      relire = true;
+    }
+    if (relire || (elements === null && !enLecture && message === "")) charger();
+    dessiner();
+    afficher(true);
+  };
+
+  // Cliquer dans la liste ne retire pas le focus du champ (WebKit ne donne pas le focus aux boutons).
+  liste.addEventListener("mousedown", (e) => e.preventDefault());
+  racine.addEventListener("focusout", (e) => {
+    if (!racine.contains(e.relatedTarget as Node | null)) afficher(false);
+  });
+  input.addEventListener("focus", () => ouvrir(true));
+  input.addEventListener("click", () => {
+    if (liste.hidden) ouvrir(true);
+  });
+  input.addEventListener("input", () => ouvrir(false));
+  fleche.addEventListener("click", () => {
+    if (liste.hidden) {
+      input.focus();
+      ouvrir(true);
+    } else afficher(false);
   });
   input.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") liste.hidden = true;
+    if (e.key === "Escape") afficher(false);
     if (e.key === "ArrowDown") {
       e.preventDefault();
+      if (liste.hidden) ouvrir(true);
       deplacer(null, 1);
     }
     if (e.key === "Enter" && !liste.hidden) {
@@ -293,19 +366,18 @@ export function recherche<T>(options: {
       if (boutons()[0] === cible) input.focus();
       else deplacer(cible, -1);
     } else if (e.key === "Escape") {
-      liste.hidden = true;
+      afficher(false);
       input.focus();
     }
   });
 
-  /** Remet le champ avec un texte ; avec `chercher`, affiche aussi les suggestions de Dokos. */
-  const saisir = (texte: string, chercher = true) => {
+  const saisir = (texte: string, ouvrirListe = true) => {
     choisir(null);
     input.value = texte;
-    if (chercher) input.dispatchEvent(new Event("input"));
+    if (ouvrirListe) ouvrir(true);
   };
 
-  racine.append(input, liste);
+  racine.append(champSaisie, liste);
   const focus = () => (input.isConnected ? input : racine.querySelector<HTMLElement>("button"))?.focus();
-  return { racine, choisir, saisir, focus };
+  return { racine, choisir, saisir, texteSaisi: () => (input.isConnected ? input.value.trim() : ""), focus };
 }

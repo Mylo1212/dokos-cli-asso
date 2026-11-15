@@ -19,7 +19,7 @@ const PISTES = [
   "Faire un devis",
   "Coordonnées d'un client",
   "Exporter la liste des clients",
-  "Embaucher quelqu'un en CDD",
+  "Importer des factures depuis Excel",
   "Créer un événement avec inscription",
   "Voir les factures en retard",
 ];
@@ -134,7 +134,7 @@ export function initialiserChat(options: {
       h(
         "p",
         { class: "texte" },
-        "Bonjour ! Dites-moi ce que vous voulez faire : un devis, une facture, un contrat, une liste Excel… Je vous indique où aller et comment faire, et je peux pré-remplir le formulaire.",
+        "Bonjour ! Dites-moi ce que vous voulez faire : un devis, une facture, un import ou un export Excel… Je vous indique où aller et comment faire, et je peux pré-remplir le formulaire.",
       ),
       pistes,
     );
