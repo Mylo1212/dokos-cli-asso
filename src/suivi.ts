@@ -1,16 +1,8 @@
 // Onglet Suivi : mes brouillons, transformation devis → commande → facture,
-// inscrits d'un événement, alertes RH, factures en retard. Lecture seule, sauf
+// inscrits d'un événement, factures en retard. Lecture seule, sauf
 // la transformation qui crée un brouillon.
 
-import {
-  api,
-  type AlertesRhVue,
-  type BrouillonVue,
-  type BrouillonsVue,
-  type EcheanceVue,
-  type EvenementVue,
-  type ImpayesVue,
-} from "./api";
+import { api, type BrouillonVue, type BrouillonsVue, type EvenementVue, type ImpayesVue } from "./api";
 import {
   alerte,
   alerteErreur,
@@ -163,45 +155,6 @@ export function initialiserSuivi(panneau: HTMLElement): void {
     if (listeEvenements.some((e) => e.id === choisi)) evenements.value = choisi;
   });
 
-  // --- Alertes RH ---
-  const zoneRh = h("div", { "aria-live": "polite" });
-  const ligneEcheance = (e: EcheanceVue, jours: string) => [
-    e.nom || e.employe,
-    e.typeContrat,
-    dateLisible(e.entree),
-    dateLisible(e.fin),
-    jours,
-    lienDokos(e.lien),
-  ];
-  const afficherRh = (a: AlertesRhVue): (Node | string)[] => {
-    const bloc = (titre: string, lignes: (string | Node)[][], vide: string) =>
-      h(
-        "div",
-        { class: "bloc" },
-        h("h3", {}, titre),
-        lignes.length === 0
-          ? h("p", { class: "note sans-marge" }, vide)
-          : h("div", { class: "defilement" }, tableau(["Salarié", "Type", "Entrée", "Fin", "Jours", ""], lignes)),
-      );
-    return [
-      bloc(
-        `Fins de contrat dans les ${a.horizonJours} jours`,
-        a.finsProches.map((e) => ligneEcheance(e, `dans ${e.jours} j`)),
-        "Aucune fin de contrat proche.",
-      ),
-      bloc(
-        "CDD sans date de fin",
-        a.cddSansFin.map((e) => ligneEcheance(e, "")),
-        "Aucun.",
-      ),
-      bloc(
-        "Contrats récents (période d'essai probable)",
-        a.recents.map((e) => ligneEcheance(e, `depuis ${e.jours} j`)),
-        "Aucun contrat de moins de 60 jours.",
-      ),
-    ];
-  };
-
   // --- Factures en retard ---
   const zoneImpayes = h("div", { "aria-live": "polite" });
   const afficherImpayes = (v: ImpayesVue): (Node | string)[] => {
@@ -247,11 +200,10 @@ export function initialiserSuivi(panneau: HTMLElement): void {
 
   brancher(zoneBrouillons, donnees.brouillons, afficherBrouillons);
   donnees.brouillons.abonner(filtrer);
-  brancher(zoneRh, donnees.rh, afficherRh);
   brancher(zoneImpayes, donnees.impayes, afficherImpayes);
 
   // --- Une seule actualisation pour toute la page ---
-  const suivies = [donnees.brouillons, donnees.rh, donnees.impayes];
+  const suivies = [donnees.brouillons, donnees.impayes];
   const fraicheur = h("span", { class: "fraicheur" });
   const actualiser = bouton("Actualiser", "discret", async () => {
     await Promise.all([chargerSuivi(true), donnees.evenements.charger(true)]);
@@ -292,7 +244,6 @@ export function initialiserSuivi(panneau: HTMLElement): void {
       zoneBrouillons,
     ),
     h("div", { class: "carte", id: "suivi-impayes" }, h("h2", {}, "Factures en retard"), zoneImpayes),
-    h("div", { class: "carte", id: "suivi-rh" }, h("h2", {}, "Alertes RH"), zoneRh),
     h(
       "div",
       { class: "carte", id: "suivi-inscrits" },

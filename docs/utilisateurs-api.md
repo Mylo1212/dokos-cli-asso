@@ -38,16 +38,27 @@ nécessaire pour les questions. (Rôle standard proche : *Website Manager*.)
 
 ## Profil `rh`
 
-Facultatif : il ne sert qu'à lire. Sans lui, Suivi n'affiche pas les échéances
-des contrats de travail et l'export des employés est indisponible. L'appli ne
-crée ni employé ni contrat.
+Facultatif : il ne sert qu'à lire. Sans lui, l'export des employés est
+indisponible. L'appli ne crée ni employé ni contrat.
 
 | DocType | Lire | Créer | Modifier | Pourquoi |
 |---|---|---|---|---|
 | Employee | oui | | | export des employés |
-| Employment Contract | oui | | | échéances de contrats (Suivi) |
 
 (Rôle standard proche : *HR User*, plus large que nécessaire.)
+
+## Profil `compta`
+
+Facultatif : il ne sert qu'à l'export du grand livre, en lecture seule. Aucun
+droit de création ni de validation.
+
+| DocType | Lire | Pourquoi |
+|---|---|---|
+| GL Entry | oui | écritures du journal et de la période |
+| Accounting Journal | oui | liste déroulante des journaux |
+| Account | oui | numéros et types de compte (valeurs nettes des comptes de tiers) |
+
+(Rôles standard proches : *Accounts User* ou *Auditor*.)
 
 ## Vérifier
 

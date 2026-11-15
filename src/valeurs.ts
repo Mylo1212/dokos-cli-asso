@@ -3,6 +3,7 @@
 
 import type {
   DemandeEvenement,
+  DemandeGrandLivre,
   DemandeListe,
   DemandeVente,
   DemandeVenteModele,
@@ -199,6 +200,34 @@ export function demandeEvenement(saisie: SaisieEvenement): DemandeEvenement | st
     annulation: saisie.annulation,
     questions: saisie.questions,
   };
+}
+
+/** Saisies du grand livre, telles qu'elles sont à l'écran. */
+export interface SaisieGrandLivre {
+  /** Identifiant Dokos du journal choisi dans la liste. */
+  journal: string | null;
+  du: string;
+  au: string;
+}
+
+/** Demande de grand livre, ou le message à afficher si la saisie est incomplète. */
+export function demandeGrandLivre(saisie: SaisieGrandLivre): DemandeGrandLivre | string {
+  if (!saisie.journal) return "Choisissez un journal comptable dans la liste.";
+  if (!saisie.du || !saisie.au) return "Renseignez les dates de début et de fin.";
+  if (saisie.du > saisie.au) return "La date de fin est avant la date de début.";
+  return { journal: saisie.journal, du: saisie.du, au: saisie.au };
+}
+
+/** Premier et dernier jour du mois précédent `jour`, en `AAAA-MM-JJ`. */
+export function moisPrecedent(jour: Date): { du: string; au: string } {
+  const debut = new Date(jour.getFullYear(), jour.getMonth() - 1, 1);
+  const fin = new Date(jour.getFullYear(), jour.getMonth(), 0);
+  return { du: formaterDate(debut), au: formaterDate(fin) };
+}
+
+/** Montant sans devise, à la française : `1 234,50`. */
+export function nombreFrancais(n: number): string {
+  return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 }
 
 /** Identifiant d'un choix d'ambiguïté d'import : même clé que côté Rust. */

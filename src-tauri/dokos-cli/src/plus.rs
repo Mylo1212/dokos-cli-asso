@@ -10,15 +10,14 @@ use dokos_core::brouillons::{brouillons_de_vente, evenements_non_publies};
 use dokos_core::date::Date;
 use dokos_core::doublon::SiDoublon;
 use dokos_core::export::{FiltresExport, Reference, TypeListe, lire_tableau, retrouver_reference};
+use dokos_core::grand_livre::{Journal, lire_grand_livre, lister_journaux};
 use dokos_core::inscription::lister_inscrits;
 use dokos_core::recherche::{Correspondance, trouver_client};
-use dokos_core::suivi::{
-    TYPES_CDD, contrats_qui_se_terminent, contrats_recents, contrats_sans_fin, factures_en_retard, soldes_par_client,
-};
+use dokos_core::suivi::{factures_en_retard, soldes_par_client};
 use dokos_core::transformation::{ResultatTransformation, Transformation, transformer};
 use dokos_core::{Dokos, Transport};
 use dokos_import::analyse::{OptionsCreation, StatutCreation, cle_choix};
-use dokos_import::export::{chemin_export, ecrire_classeur};
+use dokos_import::export::{chemin_export, chemin_grand_livre, ecrire_classeur, ecrire_grand_livre};
 use dokos_import::modele::{ContexteModele, nom_fichier_modele};
 use dokos_import::rapport::ecrire_rapport;
 use dokos_import::{
@@ -319,6 +318,74 @@ pub fn exporter<T: Transport>(dokos: &Dokos<T>, demande: &DemandeExport<'_>) -> 
     Ok(())
 }
 
+// --- Grand livre -----------------------------------------------------------------------
+
+pub fn afficher_journaux<T: Transport>(dokos: &Dokos<T>) -> Result<(), Erreur> {
+    let journaux = lister_journaux(dokos)?;
+    if journaux.is_empty() {
+        println!("Aucun journal comptable actif.");
+        return Ok(());
+    }
+    let largeur = journaux.iter().map(|j| j.id.chars().count()).max().unwrap_or(0);
+    for j in &journaux {
+        println!("{:<largeur$}  {:<14} {}", j.id, j.type_journal, j.journal_name);
+    }
+    Ok(())
+}
+
+/// Journal désigné par son identifiant (« VEN - SLA ») ou, à défaut, par son code
+/// (« VEN ») s'il est unique. Casse ignorée.
+fn trouver_journal<'a>(journaux: &'a [Journal], texte: &str) -> Result<&'a Journal, Erreur> {
+    let texte = texte.trim();
+    if let Some(j) = journaux.iter().find(|j| j.id.eq_ignore_ascii_case(texte)) {
+        return Ok(j);
+    }
+    let par_code: Vec<&Journal> = journaux.iter().filter(|j| j.journal_code.eq_ignore_ascii_case(texte)).collect();
+    match par_code.as_slice() {
+        [un] => Ok(un),
+        [] => Err(Erreur::Resolution(format!(
+            "aucun journal comptable actif ne correspond à « {texte} » (voir : dokos journaux)"
+        ))),
+        plusieurs => Err(Erreur::Resolution(format!(
+            "plusieurs journaux ont le code « {texte} » ; précisez l'identifiant : {}",
+            plusieurs.iter().map(|j| j.id.as_str()).collect::<Vec<_>>().join(", ")
+        ))),
+    }
+}
+
+/// Lit le grand livre du journal sur la période et l'écrit au format d'import.
+pub fn exporter_grand_livre<T: Transport>(
+    dokos: &Dokos<T>,
+    journal: &str,
+    du: Date,
+    au: Date,
+    sortie: Option<PathBuf>,
+) -> Result<(), Erreur> {
+    let journaux = lister_journaux(dokos)?;
+    let journal = trouver_journal(&journaux, journal)?;
+    let grand_livre = lire_grand_livre(dokos, &journal.id, du, au).map_err(|e| Erreur::Saisie(e.to_string()))?;
+    let chemin = match sortie {
+        Some(c) => c,
+        None => chemin_grand_livre(&dokos_config::dossier_documents()?, &journal.id, du, au)?,
+    };
+    if let Some(dossier) = chemin.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dossier).map_err(|e| Erreur::Fichier(format!("{} : {e}", dossier.display())))?;
+    }
+    ecrire_grand_livre(&chemin, &grand_livre)?;
+    for ecartee in &grand_livre.ecartees {
+        println!("Attention, écriture non exportée : {ecartee}");
+    }
+    println!(
+        "Journal {} du {du} au {au} : {} ligne(s), débit {:.2}, crédit {:.2}",
+        journal.id,
+        grand_livre.lignes.len(),
+        grand_livre.total_debit,
+        grand_livre.total_credit
+    );
+    println!("Fichier : {}", chemin.display());
+    Ok(())
+}
+
 // --- Suivi ---------------------------------------------------------------------------
 
 pub fn afficher_brouillons<T: Transport>(
@@ -434,26 +501,6 @@ pub fn afficher_retards<T: Transport>(dokos: &Dokos<T>) -> Result<(), Erreur> {
     Ok(())
 }
 
-pub fn afficher_alertes_rh<T: Transport>(dokos: &Dokos<T>) -> Result<(), Erreur> {
-    let aujourdhui = Date::aujourdhui();
-    let fins = contrats_qui_se_terminent(dokos, aujourdhui, 30)?;
-    println!("Contrats qui se terminent dans les 30 jours : {}", fins.len());
-    for c in &fins {
-        println!("  {} {} ({}) — fin le {}", c.id, c.employee_name, c.contract_type, c.relieving_date);
-    }
-    let sans_fin = contrats_sans_fin(dokos, TYPES_CDD)?;
-    println!("CDD sans date de fin : {}", sans_fin.len());
-    for c in &sans_fin {
-        println!("  {} {} ({}) — entré le {}", c.id, c.employee_name, c.contract_type, c.date_of_joining);
-    }
-    let recents = contrats_recents(dokos, aujourdhui, 60)?;
-    println!("Contrats de moins de 60 jours (période d'essai probable) : {}", recents.len());
-    for c in &recents {
-        println!("  {} {} ({}) — entré le {}", c.id, c.employee_name, c.contract_type, c.date_of_joining);
-    }
-    Ok(())
-}
-
 fn majuscule(texte: &str) -> String {
     let mut c = texte.chars();
     c.next().map(|p| p.to_uppercase().chain(c).collect()).unwrap_or_default()
@@ -462,6 +509,21 @@ fn majuscule(texte: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn journal_par_identifiant_ou_code() {
+        let j = |id: &str, code: &str| Journal {
+            id: id.into(),
+            journal_code: code.into(),
+            journal_name: String::new(),
+            type_journal: String::new(),
+        };
+        let journaux = [j("VEN - SLA", "VEN"), j("ACH - SLA", "ACH"), j("BNQ - SLA", "BNQ"), j("BNQ - AUT", "BNQ")];
+        assert_eq!(trouver_journal(&journaux, "ven - sla").expect("identifiant").id, "VEN - SLA");
+        assert_eq!(trouver_journal(&journaux, " ach ").expect("code").id, "ACH - SLA");
+        assert!(trouver_journal(&journaux, "BNQ").expect_err("ambigu").to_string().contains("BNQ - AUT"));
+        assert!(trouver_journal(&journaux, "XYZ").is_err());
+    }
 
     #[test]
     fn choix_analyse() {

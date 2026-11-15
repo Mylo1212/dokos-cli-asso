@@ -12,6 +12,9 @@ import {
   demandeVente,
   erreurVue,
   filtrerOptions,
+  demandeGrandLivre,
+  moisPrecedent,
+  nombreFrancais,
   formaterDate,
   livraisonPassee,
   montant,
@@ -295,5 +298,37 @@ describe("liste déroulante", () => {
     expect(r.affiches).toHaveLength(200);
     expect(r.restants).toBe(250);
     expect(filtrerOptions(beaucoup, "client 44", (c) => c)).toMatchObject({ restants: 0 });
+  });
+});
+
+describe("grand livre", () => {
+  it("construit la demande", () => {
+    expect(demandeGrandLivre({ journal: "VEN - SLA", du: "2026-10-01", au: "2026-10-31" })).toEqual({
+      journal: "VEN - SLA",
+      du: "2026-10-01",
+      au: "2026-10-31",
+    });
+    expect(demandeGrandLivre({ journal: "VEN - SLA", du: "2026-10-31", au: "2026-10-31" })).toMatchObject({
+      du: "2026-10-31",
+    });
+  });
+
+  it("refuse une saisie incomplète ou incohérente", () => {
+    expect(demandeGrandLivre({ journal: null, du: "2026-10-01", au: "2026-10-31" })).toMatch(/journal/);
+    expect(demandeGrandLivre({ journal: "", du: "2026-10-01", au: "2026-10-31" })).toMatch(/journal/);
+    expect(demandeGrandLivre({ journal: "VEN - SLA", du: "", au: "2026-10-31" })).toMatch(/dates/);
+    expect(demandeGrandLivre({ journal: "VEN - SLA", du: "2026-10-01", au: "" })).toMatch(/dates/);
+    expect(demandeGrandLivre({ journal: "VEN - SLA", du: "2026-11-01", au: "2026-10-31" })).toMatch(/avant/);
+  });
+
+  it("propose le mois précédent, y compris autour du changement d'année et en février", () => {
+    expect(moisPrecedent(new Date(2026, 10, 15))).toEqual({ du: "2026-10-01", au: "2026-10-31" });
+    expect(moisPrecedent(new Date(2026, 0, 5))).toEqual({ du: "2025-12-01", au: "2025-12-31" });
+    expect(moisPrecedent(new Date(2024, 2, 31))).toEqual({ du: "2024-02-01", au: "2024-02-29" });
+  });
+
+  it("écrit les montants à la française", () => {
+    expect(nombreFrancais(1234.5).replace(/\s/g, " ")).toBe("1 234,50");
+    expect(nombreFrancais(0)).toBe("0,00");
   });
 });

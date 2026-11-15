@@ -345,30 +345,7 @@ pub struct InscritsVue {
     pub lignes: Vec<BTreeMap<String, String>>,
 }
 
-// --- Suivi : alertes RH, factures en retard -------------------------------------------
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EcheanceVue {
-    pub id: String,
-    pub employe: String,
-    pub nom: String,
-    pub type_contrat: String,
-    pub entree: String,
-    pub fin: String,
-    /// Jours restants (fin) ou écoulés (entrée).
-    pub jours: i64,
-    pub lien: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AlertesRhVue {
-    pub fins_proches: Vec<EcheanceVue>,
-    pub cdd_sans_fin: Vec<EcheanceVue>,
-    pub recents: Vec<EcheanceVue>,
-    pub horizon_jours: i64,
-}
+// --- Suivi : factures en retard -------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -550,6 +527,39 @@ pub struct DemandeListe {
     pub texte: Option<String>,
     pub inclure_inactifs: bool,
     pub vendables_seulement: bool,
+}
+
+/// Journal comptable proposé dans la liste déroulante du grand livre.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JournalVue {
+    /// Identifiant Dokos (« VEN - SLA »).
+    pub id: String,
+    pub code: String,
+    pub libelle: String,
+    /// Type en français (Ventes, Achats, Caisse, Banque…).
+    pub type_journal: String,
+}
+
+/// Grand livre demandé par l'interface : journal et dates (`AAAA-MM-JJ`).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DemandeGrandLivre {
+    pub journal: String,
+    pub du: String,
+    pub au: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResultatGrandLivreVue {
+    /// Fichier enregistré dans Documents\Dokos\exports.
+    pub chemin: String,
+    pub lignes: usize,
+    pub total_debit: f64,
+    pub total_credit: f64,
+    /// Écritures non exportées (compte sans numéro, date illisible), une phrase par cas.
+    pub ecartees: Vec<String>,
 }
 
 /// Valeurs possibles des filtres « groupe » et « territoire » d'une liste.

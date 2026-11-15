@@ -61,6 +61,16 @@ export function commandesDeBase(): Commande[] {
       action: () => ouvrirOnglet("export"),
     },
     {
+      libelle: "Exporter le grand livre",
+      groupe: "En nombre",
+      icone: "export",
+      mots: "comptabilite journal ecritures ventes compta",
+      action: () => {
+        ouvrirOnglet("export");
+        signaler("dokos:grand-livre", null);
+      },
+    },
+    {
       libelle: "Mes brouillons",
       groupe: "Suivre",
       icone: "suivi",
@@ -73,13 +83,6 @@ export function commandesDeBase(): Commande[] {
       icone: "suivi",
       mots: "impayes relance encaisser",
       action: () => ouvrirOnglet("suivi", "suivi-impayes"),
-    },
-    {
-      libelle: "Échéances des contrats de travail",
-      groupe: "Suivre",
-      icone: "suivi",
-      mots: "fin de contrat cdd periode essai",
-      action: () => ouvrirOnglet("suivi", "suivi-rh"),
     },
     {
       libelle: "Inscrits d'un événement",

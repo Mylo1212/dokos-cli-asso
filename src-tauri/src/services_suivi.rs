@@ -1,5 +1,5 @@
 //! Suivi : mes brouillons, transformation de documents, inscrits d'un
-//! événement, alertes RH, factures en retard. Lecture seule, sauf la
+//! événement, factures en retard. Lecture seule, sauf la
 //! transformation (création d'un brouillon).
 
 use dokos_core::brouillons::{Brouillon, brouillons_de_vente, evenements_non_publies};
@@ -9,10 +9,7 @@ use dokos_core::evenement::DOCTYPE_EVENEMENT;
 use dokos_core::formulaire::{CHAMPS_DE_BASE, DOCTYPE_INSCRIPTION, questions_possibles};
 use dokos_core::inscription::{lister_evenements, lister_inscrits};
 use dokos_core::meta::lire_meta;
-use dokos_core::suivi::{
-    DOCTYPE_CONTRAT, EcheanceContrat, Echeances, TYPES_CDD, echeances_de_contrats, factures_en_retard,
-    soldes_par_client,
-};
+use dokos_core::suivi::{factures_en_retard, soldes_par_client};
 use dokos_core::transformation::{ResultatTransformation, Transformation, transformer};
 use dokos_core::types::DOCTYPE_FACTURE;
 use dokos_core::{Dokos, Transport};
@@ -20,11 +17,6 @@ use dokos_core::{Dokos, Transport};
 use crate::erreurs::{ErreurVue, erreur as texte};
 use crate::services::{Resultat, lien_desk};
 use crate::vues::*;
-
-/// Jours d'horizon des alertes RH.
-pub const HORIZON_RH: i64 = 30;
-/// Jours pendant lesquels un contrat est « récent » (période d'essai probable).
-pub const RECENT_RH: i64 = 60;
 
 fn vue_brouillon(base: &str, b: Brouillon) -> BrouillonVue {
     let genre = match b.doctype {
@@ -154,35 +146,6 @@ pub fn tableau_inscrits(vue: &InscritsVue) -> (Vec<String>, Vec<Vec<String>>) {
     (entetes, lignes)
 }
 
-fn vue_echeance(base: &str, aujourdhui: Date, e: EcheanceContrat, par_rapport_a_la_fin: bool) -> EcheanceVue {
-    let reference = if par_rapport_a_la_fin { &e.relieving_date } else { &e.date_of_joining };
-    let jours = reference
-        .parse::<Date>()
-        .map(|d| if par_rapport_a_la_fin { aujourdhui.jours_jusqua(d) } else { d.jours_jusqua(aujourdhui) })
-        .unwrap_or(0);
-    EcheanceVue {
-        lien: lien_desk(base, DOCTYPE_CONTRAT, &e.id),
-        id: e.id,
-        employe: e.employee,
-        nom: e.employee_name,
-        type_contrat: e.contract_type,
-        entree: e.date_of_joining,
-        fin: e.relieving_date,
-        jours,
-    }
-}
-
-pub fn alertes_rh<T: Transport>(dokos: &Dokos<T>, base: &str, aujourdhui: Date) -> Resultat<AlertesRhVue> {
-    let Echeances { fins, sans_fin, recents } =
-        echeances_de_contrats(dokos, aujourdhui, HORIZON_RH, TYPES_CDD, RECENT_RH).map_err(texte)?;
-    Ok(AlertesRhVue {
-        fins_proches: fins.into_iter().map(|e| vue_echeance(base, aujourdhui, e, true)).collect(),
-        cdd_sans_fin: sans_fin.into_iter().map(|e| vue_echeance(base, aujourdhui, e, true)).collect(),
-        recents: recents.into_iter().map(|e| vue_echeance(base, aujourdhui, e, false)).collect(),
-        horizon_jours: HORIZON_RH,
-    })
-}
-
 pub fn impayes<T: Transport>(dokos: &Dokos<T>, base: &str, aujourdhui: Date) -> Resultat<ImpayesVue> {
     let factures = factures_en_retard(dokos, aujourdhui).map_err(texte)?;
     let par_client = soldes_par_client(&factures)
@@ -284,19 +247,7 @@ mod tests {
     }
 
     #[test]
-    fn alertes_et_impayes() {
-        let faux = FauxTransport::new();
-        faux.repondre_json(200, &json!({"data": [{"name": "C-1", "employee_name": "Marie", "relieving_date": "2026-11-20", "date_of_joining": "2026-06-01"}]}));
-        faux.repondre_json(200, &json!({"data": []}));
-        faux.repondre_json(
-            200,
-            &json!({"data": [{"name": "C-2", "employee_name": "Paul", "date_of_joining": "2026-10-15"}]}),
-        );
-        let vue = alertes_rh(&Dokos::new(&faux), BASE, jour()).expect("alertes");
-        assert_eq!(vue.fins_proches[0].jours, 17);
-        assert_eq!(vue.recents[0].jours, 19);
-        assert!(vue.cdd_sans_fin.is_empty());
-
+    fn impayes_par_client() {
         let faux = FauxTransport::new();
         faux.repondre_json(200, &json!({"data": [
             {"name": "F-1", "customer": "C1", "customer_name": "Mairie", "due_date": "2026-10-04", "outstanding_amount": 100.0, "grand_total": 100.0, "currency": "EUR"},

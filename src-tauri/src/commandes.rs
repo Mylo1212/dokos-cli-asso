@@ -464,15 +464,6 @@ pub async fn exporter_inscrits(id: String) -> Resultat<String> {
 }
 
 #[tauri::command]
-pub async fn alertes_rh(aujourdhui_texte: String) -> Resultat<AlertesRhVue> {
-    bloquant(move || {
-        let (config, dokos) = connexions::connecter(Profil::Rh)?;
-        services_suivi::alertes_rh(&dokos, &config.url_base(), aujourdhui(&aujourdhui_texte)?)
-    })
-    .await
-}
-
-#[tauri::command]
 pub async fn factures_en_retard(aujourdhui_texte: String) -> Resultat<ImpayesVue> {
     bloquant(move || {
         let (config, dokos) = connexions::connecter(Profil::Ventes)?;
@@ -802,6 +793,23 @@ pub async fn exporter_liste(demande: DemandeListe, aujourdhui: String) -> Result
         let liste: dokos_core::export::TypeListe = demande.liste.parse().map_err(erreur)?;
         let (_, dokos) = connexions::connecter(services_listes::profil(liste))?;
         services_listes::exporter(&dokos, demande, &dossier_documents()?, self::aujourdhui(&aujourdhui)?)
+    })
+    .await
+}
+
+/// Journaux comptables actifs de Dokos, pour la liste déroulante du grand livre.
+#[tauri::command]
+pub async fn journaux_comptables() -> Resultat<Vec<JournalVue>> {
+    bloquant(|| services_listes::journaux(&connexions::connecter(Profil::Compta)?.1)).await
+}
+
+/// Exporte le grand livre d'un journal sur une période, au format d'import,
+/// en `Documents\Dokos\exports`. Lecture seule.
+#[tauri::command]
+pub async fn exporter_grand_livre(demande: DemandeGrandLivre) -> Resultat<ResultatGrandLivreVue> {
+    bloquant(move || {
+        let (_, dokos) = connexions::connecter(Profil::Compta)?;
+        services_listes::exporter_grand_livre(&dokos, &demande, &dossier_documents()?)
     })
     .await
 }

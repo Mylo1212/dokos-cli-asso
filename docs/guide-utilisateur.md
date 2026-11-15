@@ -9,12 +9,13 @@ n'est pas sûr : client ou article ambigu, doublon, ligne d'import à corriger.
 
 1. Ouvrez **Réglages**. Renseignez l'adresse de votre Dokos
    (`https://…`, sans chemin) et la société si vous en avez plusieurs.
-2. Pour chaque usage (Ventes, Événements, RH), collez la clé et le secret de
+2. Pour chaque usage (Ventes, Événements, RH, Comptabilité), collez la clé et le secret de
    l'utilisateur API correspondant (voir `docs/utilisateurs-api.md`), puis
    **Enregistrer** : l'appli teste la connexion avant de garder quoi que ce soit.
    Le secret va dans le Gestionnaire d'identification Windows, jamais dans un
-   fichier. Le profil RH ne sert qu'à lire les échéances de contrats de travail
-   (Suivi) et à exporter les employés.
+   fichier. Le profil RH ne sert qu'à exporter les employés, le profil
+   Comptabilité qu'à exporter le grand livre : tous deux sont facultatifs et en
+   lecture seule.
 3. Assistant IA : laissez la case décochée si vous n'avez pas de serveur Open
    WebUI. Sinon, adresse Tailscale, modèle, clé, puis **Enregistrer et tester**.
 
@@ -26,9 +27,8 @@ n'est pas sûr : client ou article ambigu, doublon, ligne d'import à corriger.
   et les **Réglages**. Le menu se réduit aux pictogrammes (bouton en haut du
   menu, ou d'office en fenêtre étroite). Un onglet grisé attend sa clé API dans
   Réglages ; le chiffre à côté de Suivi est le nombre de brouillons en attente.
-- **Accueil** : ce qui attend (brouillons à valider, factures en retard, fins
-  de contrat, CDD sans date de fin) — un clic ouvre le bloc correspondant de
-  Suivi —, les créations en un clic (devis, commande, facture, événement,
+- **Accueil** : ce qui attend (brouillons à valider, factures en retard) — un
+  clic ouvre le bloc correspondant de Suivi —, les créations en un clic (devis, commande, facture, événement,
   import, export) et les derniers brouillons.
 - **Listes déroulantes** : partout où l'on choisit un élément de Dokos (client,
   article, groupe, territoire), le champ s'ouvre au clic ou avec la flèche et
@@ -184,6 +184,38 @@ Excel, un filtre sur l'en-tête, et une feuille « À propos » qui rappelle les
 filtres. 10 000 lignes au plus : au-delà, précisez les filtres. Les employés
 demandent la clé du profil RH, les autres listes celle du profil Ventes.
 
+### Grand livre
+
+Le bouton **Grand livre**, à côté des listes, exporte les écritures comptables
+d'un journal sur une période, **directement au format d'import** : il remplace
+l'export du rapport « Grand livre » de Dokos suivi de la macro de mise en forme.
+Il demande la clé du profil Comptabilité.
+
+1. **Journal comptable** : liste déroulante des journaux actifs de Dokos (code,
+   nom, type). Le dernier journal choisi est retenu.
+2. **Du** et **Au** : dates de comptabilisation, comprises ; le mois précédent
+   est proposé.
+3. **Créer le fichier Excel**.
+
+Le fichier `Documents\Dokos\exports\grand-livre-<journal>-<du>-<au>.xlsx` a une
+feuille, une ligne par écriture, et les colonnes :
+
+| Colonne | Contenu |
+|---|---|
+| DATE | date de comptabilisation (`jj/mm/aaaa`) |
+| JOURNAL | toujours `VEN`, quel que soit le journal exporté |
+| GENERAL | chiffres en tête du compte (`411 - Clients - SLA` → 411) |
+| AUXILIAIRE | `ERP` sur le compte 411, vide ailleurs |
+| DEBIT, CREDIT | montants (0 si vide) |
+| LIBELLE | tiers |
+| REFINTERNE | numéro de la pièce (document de référence) |
+
+Les écritures annulées et les à-nouveaux sont exclus, et les comptes de tiers
+(clients, fournisseurs) sont en valeurs nettes, comme dans le rapport réglé de
+la même façon. Une écriture dont le compte n'a pas de numéro est écartée et
+signalée après l'export ; au-delà de 100 000 écritures, l'export est refusé :
+réduisez la période. Rien n'est modifié dans Dokos.
+
 ## Suivi
 
 Un seul bouton **Actualiser**, en haut, relit tout ; l'heure de la dernière
@@ -195,9 +227,6 @@ lecture est affichée à côté.
   validée) créent le document suivant en brouillon.
 - **Inscrits d'un événement** : liste et export Excel (prénom, nom, e-mail,
   téléphone, réponses aux questions).
-- **Échéances des contrats de travail** (profil RH, lecture seule) : fins de
-  contrat dans les 30 jours, CDD sans date de fin, contrats de moins de 60 jours.
-  Les contrats se créent dans Dokos.
 - **Factures en retard** : échéance dépassée et solde non nul, par client. La
   relance se fait dans Dokos.
 

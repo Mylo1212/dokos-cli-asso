@@ -6,9 +6,9 @@ clients depuis Excel ; exporter des listes vers Excel ; suivre ce qui attend.
 
 Version « asso » de [dokos-cli](https://github.com/Mylo1212/dokos-cli) : même
 fonctionnement sous-jacent, périmètre réduit (ni contrats de travail, ni
-employés à créer, ni formats d'impression) et deux apports : un **prix** par
-ligne en saisie libre, et des **listes déroulantes** pour tout ce qui se
-cherche dans Dokos.
+employés à créer, ni formats d'impression) et trois apports : un **prix** par
+ligne en saisie libre, des **listes déroulantes** pour tout ce qui se cherche
+dans Dokos, et l'**export du grand livre** au format d'import.
 
 Règle de conception : **l'outil propose, Rust vérifie, l'utilisateur valide, Dokos enregistre.**
 
@@ -22,8 +22,8 @@ Open WebUI : commencez par une instance de test.
 | **Ventes** (Créer) | Devis, commande ou facture en brouillon. Client et articles choisis dans des listes déroulantes ; **prix unitaire HT facultatif** par ligne (vide : prix de Dokos). Ou « À partir d'un modèle » : copie d'un document étiqueté « Template ». Catalogue des groupes d'articles. |
 | **Formulaires** (Créer) | Un événement et son formulaire d'inscription, créés non publiés, puis publiés d'un clic séparé. |
 | **Import** | Un modèle Excel généré depuis votre Dokos, analysé ligne par ligne, création tout ou rien : **Factures**, **Factures à partir d'un modèle**, **Articles**, **Clients**. |
-| **Export** | Clients, articles, devis, commandes, factures ou employés dans un fichier Excel, avec filtres (client, groupe, territoire, période, statut, nom) en listes déroulantes. Lecture seule. |
-| **Suivi** | Mes brouillons (et « Commander » / « Facturer »), inscrits d'un événement, échéances des contrats de travail, factures en retard. Lecture seule, sauf la transformation qui crée un brouillon. |
+| **Export** | Clients, articles, devis, commandes, factures ou employés dans un fichier Excel, avec filtres (client, groupe, territoire, période, statut, nom) en listes déroulantes. **Grand livre** d'un journal comptable et d'une période, directement au format d'import (colonnes DATE à REFINTERNE). Lecture seule. |
+| **Suivi** | Mes brouillons (et « Commander » / « Facturer »), inscrits d'un événement, factures en retard. Lecture seule, sauf la transformation qui crée un brouillon. |
 | **Accueil**, **Réglages**, **Assistant** | Tableau de bord ; adresse de Dokos et clés API ; chatbot Open WebUI qui qualifie la demande et pré-remplit Ventes, Formulaires ou Export. |
 
 Guide complet : `docs/guide-utilisateur.md`. Droits des utilisateurs API :
@@ -45,7 +45,7 @@ src-tauri/                   appli Tauri + racine du workspace (resolver 3, MSRV
 │   recherche.rs             recherche par texte, lecture complète des clients et articles (listes déroulantes)
 │   formulaire.rs, evenement.rs, inscription.rs   formulaire web d'inscription, événement, inscrits
 │   article.rs, clientele.rs groupes d'articles, prix, articles désactivés ; clients
-│   brouillons.rs, suivi.rs, transformation.rs   brouillons, retards, échéances de contrats, devis → commande → facture
+│   brouillons.rs, suivi.rs, transformation.rs   brouillons, retards, devis → commande → facture
 │   export.rs                listes exportables : colonnes et filtres fixes, pagination, lecture seule
 │   modele_vente.rs          documents « Template » : liste, lecture, copie avec client, dates, quantités
 │   fiche.rs                 fiches clients et articles détaillées (chatbot), lecture seule
@@ -63,7 +63,8 @@ src-tauri/                   appli Tauri + racine du workspace (resolver 3, MSRV
    |---|---|---|
    | `ventes` | clients, articles, devis, commandes, factures, export | lecture clients/articles, lecture et création des documents de vente, **sans** validation |
    | `evenements` | événements, formulaires web, inscrits | Website Manager, création d'événements |
-   | `rh` (facultatif) | échéances de contrats, export des employés | lecture seule |
+   | `rh` (facultatif) | export des employés | lecture seule |
+   | `compta` (facultatif) | export du grand livre | lecture de GL Entry, Accounting Journal, Account |
 
 2. Renseignez l'adresse, la société et les clés : onglet **Réglages** de l'appli,
    ou `dokos connexion enregistrer --profil ventes --url https://… --cle … --societe "…"`.
@@ -136,7 +137,8 @@ dokos devis commander SAL-QTN-2026-00012
 dokos commande facturer SAL-ORD-2026-00031
 dokos facture retards
 dokos evenement inscrits EV00042 --sortie inscrits.csv
-dokos contrat alertes
+dokos journaux
+dokos grand-livre --journal VEN --du 01/10/2026 --au 31/10/2026
 dokos diagnostic
 ```
 
@@ -165,7 +167,7 @@ Vérifiées dans le code de Dokos v5.18 et de l'appli `bookings` :
 | Facture | `Sales Invoice` | `customer`, `posting_date`, `set_posting_time`, `due_date`, `items[].rate` |
 | Événement | `Event` (+ bookings) | `subject`, `starts_on`, `published`, `allow_registrations`, `registration_form`, `max_number_of_registrations` |
 | Formulaire | `Web Form` → `Event Registration` | `first_name`, `last_name`, `email`, `mobile_number` + vos champs |
-| Contrat (lecture) | `Employment Contract` (hrms) | `employee`, `contract_type`, `date_of_joining`, `relieving_date` |
+| Grand livre (lecture) | `GL Entry`, `Accounting Journal`, `Account` | `posting_date`, `account`, `debit`, `credit`, `party`, `voucher_no`, `accounting_journal`, `is_cancelled`, `is_opening` ; `journal_code`, `journal_name`, `type` ; `account_number`, `account_type` |
 
 ## Développement
 

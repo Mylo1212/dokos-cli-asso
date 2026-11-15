@@ -79,7 +79,7 @@ impl Onglet {
             }
             Self::Export => "fichier Excel des clients, articles, devis, commandes, factures ou employés, avec filtres",
             Self::Suivi => {
-                "brouillons en attente, devis → commande → facture, inscrits d'un événement, échéances des contrats de travail, factures en retard"
+                "brouillons en attente, devis → commande → facture, inscrits d'un événement, factures en retard"
             }
             Self::Formulaires => "événement public et formulaire d'inscription, créés non publiés",
             Self::Reglages => "adresse de Dokos, clés API par profil, assistant IA, diagnostic",

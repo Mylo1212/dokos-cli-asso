@@ -104,6 +104,23 @@ enum Action {
         #[arg(long)]
         sortie: Option<PathBuf>,
     },
+    /// Journaux comptables actifs de Dokos (profil compta)
+    Journaux,
+    /// Exporte le grand livre d'un journal comptable en fichier Excel au format d'import, en lecture seule (profil compta)
+    GrandLivre {
+        /// Journal comptable : identifiant (« VEN - SLA ») ou code (« VEN »), voir `dokos journaux`
+        #[arg(long)]
+        journal: String,
+        /// Début de période (date de comptabilisation)
+        #[arg(long, value_parser = saisie::date)]
+        du: Date,
+        /// Fin de période, comprise
+        #[arg(long, value_parser = saisie::date)]
+        au: Date,
+        /// Fichier .xlsx à écrire ; par défaut Documents\Dokos\exports
+        #[arg(long)]
+        sortie: Option<PathBuf>,
+    },
     /// Documents créés par l'outil en attente de validation ou de publication
     Brouillons,
     /// Diagnostic à copier dans une demande d'aide (réglages sans secret, journal)
@@ -120,16 +137,13 @@ enum Action {
     /// Événements publics et formulaires d'inscription (profil evenements)
     #[command(subcommand)]
     Evenement(Evenement),
-    /// Échéances des contrats de travail (profil rh)
-    #[command(subcommand)]
-    Contrat(Contrat),
 }
 
 #[derive(Subcommand)]
 enum Connexion {
     /// Teste la connexion d'un profil puis enregistre l'URL, la clé et le secret (demandé au clavier)
     Enregistrer {
-        /// ventes, evenements ou rh (rh : échéances des contrats et export des employés)
+        /// ventes, evenements, rh (export des employés) ou compta (grand livre)
         #[arg(long)]
         profil: Profil,
         /// Racine du site, par exemple https://dokos.exemple.fr
@@ -323,12 +337,6 @@ enum Evenement {
     },
 }
 
-#[derive(Subcommand)]
-enum Contrat {
-    /// Fins de contrat proches, CDD sans fin, contrats récents (lecture seule)
-    Alertes,
-}
-
 fn main() -> ExitCode {
     let _ = dokos_config::journal::initialiser_journal("cli");
     match executer(Cli::parse().action) {
@@ -415,6 +423,14 @@ fn executer(action: Action) -> Result<(), Erreur> {
                 },
             )
         }
+        Action::Journaux => {
+            let (_, dokos) = dokos_config::connecter(Profil::Compta)?;
+            plus::afficher_journaux(&dokos)
+        }
+        Action::GrandLivre { journal, du, au, sortie } => {
+            let (_, dokos) = dokos_config::connecter(Profil::Compta)?;
+            plus::exporter_grand_livre(&dokos, &journal, du, au, sortie)
+        }
         Action::Brouillons => {
             let ventes = dokos_config::connecter(Profil::Ventes).ok().map(|(_, d)| d);
             let evenements = dokos_config::connecter(Profil::Evenements).ok().map(|(_, d)| d);
@@ -449,10 +465,6 @@ fn executer(action: Action) -> Result<(), Erreur> {
             plus::afficher_retards(&dokos)
         }
         Action::Evenement(evenement) => gerer_evenement(evenement),
-        Action::Contrat(Contrat::Alertes) => {
-            let (_, dokos) = dokos_config::connecter(Profil::Rh)?;
-            plus::afficher_alertes_rh(&dokos)
-        }
     }
 }
 

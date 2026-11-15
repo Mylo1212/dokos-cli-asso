@@ -7,8 +7,9 @@ use assistant_core::listes::PropositionListe;
 use dokos_config::Profil;
 use dokos_core::date::Date;
 use dokos_core::export::{FiltresExport, Reference, TypeListe, retrouver_reference, valeurs_possibles};
+use dokos_core::grand_livre::{lire_grand_livre, lister_journaux};
 use dokos_core::{Dokos, Transport};
-use dokos_import::export::{chemin_export, ecrire_classeur};
+use dokos_import::export::{chemin_export, chemin_grand_livre, ecrire_classeur, ecrire_grand_livre};
 
 use crate::erreurs::erreur;
 use crate::services::Resultat;
@@ -43,6 +44,55 @@ pub fn catalogue() -> Vec<ListeVue> {
             colonnes: l.colonnes().iter().map(|c| c.entete.to_owned()).collect(),
         })
         .collect()
+}
+
+/// Libellé français du type d'un journal comptable de Dokos.
+fn type_de_journal(type_dokos: &str) -> &str {
+    match type_dokos {
+        "Sales" => "Ventes",
+        "Purchase" => "Achats",
+        "Cash" => "Caisse",
+        "Bank" => "Banque",
+        "Opening" => "À-nouveaux",
+        "Miscellaneous" => "Opérations diverses",
+        autre => autre,
+    }
+}
+
+/// Journaux comptables actifs, pour la liste déroulante du grand livre.
+pub fn journaux<T: Transport>(dokos: &Dokos<T>) -> Resultat<Vec<JournalVue>> {
+    let journaux = lister_journaux(dokos).map_err(erreur)?;
+    Ok(journaux
+        .into_iter()
+        .map(|j| JournalVue {
+            libelle: if j.journal_name.is_empty() { j.id.clone() } else { j.journal_name.clone() },
+            type_journal: type_de_journal(&j.type_journal).to_owned(),
+            code: j.journal_code,
+            id: j.id,
+        })
+        .collect())
+}
+
+/// Lit le grand livre du journal sur la période et l'écrit en `dossier/exports/`
+/// au format d'import (colonnes DATE à REFINTERNE). Lecture seule dans Dokos.
+pub fn exporter_grand_livre<T: Transport>(
+    dokos: &Dokos<T>,
+    demande: &DemandeGrandLivre,
+    dossier: &Path,
+) -> Resultat<ResultatGrandLivreVue> {
+    let du: Date = demande.du.trim().parse().map_err(erreur)?;
+    let au: Date = demande.au.trim().parse().map_err(erreur)?;
+    let grand_livre = lire_grand_livre(dokos, &demande.journal, du, au).map_err(erreur)?;
+    let chemin = chemin_grand_livre(dossier, &demande.journal, du, au).map_err(erreur)?;
+    ecrire_grand_livre(&chemin, &grand_livre).map_err(erreur)?;
+    tracing::info!(journal = %demande.journal, lignes = grand_livre.lignes.len(), "grand livre exporté");
+    Ok(ResultatGrandLivreVue {
+        chemin: chemin.display().to_string(),
+        lignes: grand_livre.lignes.len(),
+        total_debit: grand_livre.total_debit,
+        total_credit: grand_livre.total_credit,
+        ecartees: grand_livre.ecartees,
+    })
 }
 
 /// Groupes et territoires proposés dans les listes déroulantes de la liste choisie.
@@ -157,6 +207,52 @@ mod tests {
         assert!(factures.statuts.iter().any(|s| s.cle == "impayee"));
         assert_eq!(profil(TypeListe::Employes), Profil::Rh);
         assert_eq!(profil(TypeListe::Articles), Profil::Ventes);
+    }
+
+    #[test]
+    fn grand_livre_exporte_et_journaux_listes() {
+        let dokos = FauxTransport::new();
+        dokos.repondre_json(
+            200,
+            &json!({"data": [{"name": "VEN - SLA", "journal_code": "VEN", "journal_name": "Ventes", "type": "Sales"}]}),
+        );
+        let liste = journaux(&Dokos::new(&dokos)).expect("journaux");
+        assert_eq!(
+            (liste[0].id.as_str(), liste[0].libelle.as_str(), liste[0].type_journal.as_str()),
+            ("VEN - SLA", "Ventes", "Ventes")
+        );
+
+        let dossier = dossier_test("grand-livre");
+        dokos.repondre_json(
+            200,
+            &json!({"data": [{"name": "411 - Clients - SLA", "account_number": "411", "account_type": "Receivable"}]}),
+        );
+        dokos.repondre_json(
+            200,
+            &json!({"data": [{"posting_date": "2026-10-31", "account": "411 - Clients - SLA", "debit": 120.0, "credit": 0.0, "party": "Mairie", "voucher_no": "F-1"}]}),
+        );
+        let demande =
+            DemandeGrandLivre { journal: "VEN - SLA".into(), du: "2026-10-01".into(), au: "2026-10-31".into() };
+        let r = exporter_grand_livre(&Dokos::new(&dokos), &demande, &dossier).expect("export");
+        assert_eq!((r.lignes, r.total_debit, r.total_credit), (1, 120.0, 0.0));
+        assert!(
+            r.chemin.contains("exports") && r.chemin.ends_with("grand-livre-VEN-SLA-2026-10-01-2026-10-31.xlsx"),
+            "{}",
+            r.chemin
+        );
+        assert!(std::fs::read(&r.chemin).expect("fichier").starts_with(b"PK"));
+
+        // Dates illisibles ou période inversée : refusées avant toute lecture.
+        let appels = dokos.requetes().len();
+        let mauvaise = DemandeGrandLivre { du: "hier".into(), ..demande.clone() };
+        assert_eq!(
+            exporter_grand_livre(&Dokos::new(&dokos), &mauvaise, &dossier).expect_err("date").genre,
+            "validation"
+        );
+        let inversee = DemandeGrandLivre { du: "2026-11-01".into(), ..demande };
+        assert!(exporter_grand_livre(&Dokos::new(&dokos), &inversee, &dossier).is_err());
+        assert_eq!(dokos.requetes().len(), appels);
+        let _ = std::fs::remove_dir_all(dossier);
     }
 
     #[test]

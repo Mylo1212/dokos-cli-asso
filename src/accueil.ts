@@ -1,5 +1,5 @@
-// Accueil : ce qui attend dans Dokos (brouillons, factures en retard,
-// échéances de contrats), les créations en un clic et les derniers brouillons.
+// Accueil : ce qui attend dans Dokos (brouillons, factures en retard),
+// les créations en un clic et les derniers brouillons.
 // Lecture seule ; les mêmes données que la section Suivi (donnees.ts).
 
 import type { BrouillonVue } from "./api";
@@ -90,8 +90,6 @@ export function creerAccueil(panneau: HTMLElement): void {
 
   const brouillons = tuile("Brouillons en attente", "suivi-brouillons");
   const impayes = tuile("Factures en retard", "suivi-impayes");
-  const fins = tuile("Fins de contrat sous 30 jours", "suivi-rh");
-  const sansFin = tuile("CDD sans date de fin", "suivi-rh");
   const zoneDerniers = h("div", { "aria-live": "polite" });
 
   const vente = (type: "devis" | "commande" | "facture") => () => {
@@ -163,25 +161,9 @@ export function creerAccueil(panneau: HTMLElement): void {
     );
   }
 
-  function majRh() {
-    const etat = donnees.rh.etat();
-    const recharger = () => void donnees.rh.charger(true);
-    fins.montrer(etat, recharger, (v) => ({
-      nombre: v.finsProches.length,
-      detail:
-        v.finsProches.length === 0
-          ? "Aucune fin de contrat proche"
-          : `Prochaine : ${v.finsProches[0]!.nom || v.finsProches[0]!.employe}, dans ${v.finsProches[0]!.jours} j`,
-    }));
-    sansFin.montrer(etat, recharger, (v) => ({
-      nombre: v.cddSansFin.length,
-      detail: v.cddSansFin.length === 0 ? "Tous les CDD ont une date de fin" : "Date de fin à renseigner dans Dokos",
-    }));
-  }
-
   function majFraicheur() {
-    const dates = [donnees.brouillons, donnees.impayes, donnees.rh].map((r) => r.etat().date);
-    const enCours = [donnees.brouillons, donnees.impayes, donnees.rh].some((r) => r.etat().enCours);
+    const dates = [donnees.brouillons, donnees.impayes].map((r) => r.etat().date);
+    const enCours = [donnees.brouillons, donnees.impayes].some((r) => r.etat().enCours);
     const connues = dates.filter((d): d is number => d !== null);
     fraicheur.textContent = enCours
       ? "Lecture de Dokos…"
@@ -214,7 +196,6 @@ export function creerAccueil(panneau: HTMLElement): void {
 
   donnees.brouillons.abonner(() => (majBrouillons(), majFraicheur()));
   donnees.impayes.abonner(() => (majImpayes(), majFraicheur()));
-  donnees.rh.abonner(() => (majRh(), majFraicheur()));
   donnees.connexions.abonner(majConnexion);
 
   panneau.append(
@@ -226,7 +207,7 @@ export function creerAccueil(panneau: HTMLElement): void {
     ),
     zoneConnexion,
     h("h2", { class: "titre-bloc" }, "À traiter"),
-    h("div", { class: "tuiles" }, brouillons.racine, impayes.racine, fins.racine, sansFin.racine),
+    h("div", { class: "tuiles" }, brouillons.racine, impayes.racine),
     h("h2", { class: "titre-bloc" }, "Créer"),
     h(
       "div",
@@ -251,7 +232,6 @@ export function creerAccueil(panneau: HTMLElement): void {
 
   majBrouillons();
   majImpayes();
-  majRh();
   majFraicheur();
   majConnexion();
   panneau.addEventListener("onglet-affiche", () => void chargerSuivi());

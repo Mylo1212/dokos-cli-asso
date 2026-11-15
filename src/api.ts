@@ -230,24 +230,6 @@ export interface InscritsVue {
   lignes: Record<string, string>[];
 }
 
-export interface EcheanceVue {
-  id: string;
-  employe: string;
-  nom: string;
-  typeContrat: string;
-  entree: string;
-  fin: string;
-  jours: number;
-  lien: string;
-}
-
-export interface AlertesRhVue {
-  finsProches: EcheanceVue[];
-  cddSansFin: EcheanceVue[];
-  recents: EcheanceVue[];
-  horizonJours: number;
-}
-
 export interface FactureRetardVue {
   id: string;
   client: string;
@@ -322,6 +304,30 @@ export interface ResultatImportVue {
   erreurs: number;
   ignores: number;
   rapport: string;
+}
+
+/** Journal comptable de Dokos, pour la liste déroulante du grand livre. */
+export interface JournalVue {
+  /** Identifiant Dokos (« VEN - SLA »). */
+  id: string;
+  code: string;
+  libelle: string;
+  typeJournal: string;
+}
+
+export interface DemandeGrandLivre {
+  journal: string;
+  du: string;
+  au: string;
+}
+
+export interface ResultatGrandLivre {
+  chemin: string;
+  lignes: number;
+  totalDebit: number;
+  totalCredit: number;
+  /** Écritures non exportées (compte sans numéro, date illisible). */
+  ecartees: string[];
 }
 
 /** Valeurs possibles des filtres « groupe » et « territoire » d'une liste. */
@@ -495,10 +501,11 @@ export const api = {
   evenementsRecents: (aujourdhuiTexte: string) => invoke<EvenementVue[]>("evenements_recents", { aujourdhuiTexte }),
   inscritsEvenement: (id: string) => invoke<InscritsVue>("inscrits_evenement", { id }),
   exporterInscrits: (id: string) => invoke<string>("exporter_inscrits", { id }),
-  alertesRh: (aujourdhuiTexte: string) => invoke<AlertesRhVue>("alertes_rh", { aujourdhuiTexte }),
   facturesEnRetard: (aujourdhuiTexte: string) => invoke<ImpayesVue>("factures_en_retard", { aujourdhuiTexte }),
 
   listesExportables: () => invoke<ListeVue[]>("listes_exportables"),
+  journauxComptables: () => invoke<JournalVue[]>("journaux_comptables"),
+  exporterGrandLivre: (demande: DemandeGrandLivre) => invoke<ResultatGrandLivre>("exporter_grand_livre", { demande }),
   /** Groupes et territoires que les filtres de la liste acceptent. */
   referencesExport: (liste: string) => invoke<ReferencesExport>("references_export", { liste }),
   assistantListe: (demande: string, aujourdhui: string) =>

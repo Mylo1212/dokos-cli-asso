@@ -61,7 +61,7 @@ const palette = creerPalette({
       libelle: "Actualiser les données de Dokos",
       groupe: "Affichage",
       icone: "actualiser",
-      mots: "rafraichir recharger brouillons factures alertes",
+      mots: "rafraichir recharger brouillons factures",
       action: () => {
         void donnees.connexions.charger(true);
         void chargerSuivi(true);

@@ -19,7 +19,11 @@ import {
   saisie,
 } from "./dom";
 import { listes } from "./donnees";
+import { creerGrandLivre } from "./grand-livre";
 import { demandeListe, dossierDe } from "./valeurs";
+
+/** Clé du bouton « Grand livre » parmi les listes. */
+const GRAND_LIVRE = "grand-livre";
 
 export function initialiserExport(panneau: HTMLElement): void {
   let catalogue: ListeVue[] = [];
@@ -28,6 +32,7 @@ export function initialiserExport(panneau: HTMLElement): void {
   let groupe: string | null = null;
   let territoire: string | null = null;
 
+  const grandLivre = creerGrandLivre();
   const segments = h("div", { class: "segments", role: "group", "aria-label": "Liste à exporter" });
   const choixClient = listeDeroulante<ClientVue>({
     placeholder: "Choisir un client…",
@@ -78,7 +83,20 @@ export function initialiserExport(panneau: HTMLElement): void {
   const exporter = bouton("Créer le fichier Excel", "principal", () => lancerExport());
   exporter.dataset.raccourci = "verifier";
 
+  /** Montre la carte du grand livre à la place des filtres des listes, ou l'inverse. */
+  function montrerGrandLivre(visible: boolean) {
+    carteListe.hidden = visible;
+    grandLivre.carte.hidden = !visible;
+    if (visible) {
+      for (const b of segments.querySelectorAll<HTMLButtonElement>("button")) {
+        b.setAttribute("aria-pressed", String(b.dataset.liste === GRAND_LIVRE));
+      }
+      grandLivre.afficher();
+    }
+  }
+
   function choisirListe(nom: string) {
+    montrerGrandLivre(false);
     // Un groupe de clients n'est pas un groupe d'articles : changer de liste efface groupe et territoire.
     if (liste?.nom !== nom) {
       choixGroupe.choisir(null);
@@ -196,40 +214,46 @@ export function initialiserExport(panneau: HTMLElement): void {
     },
   );
 
+  const carteListe = h(
+    "div",
+    { class: "carte" },
+    h("h2", {}, "Filtres"),
+    h(
+      "div",
+      { class: "grille" },
+      champClient,
+      champGroupe,
+      champTerritoire,
+      champDu,
+      champAu,
+      champStatut,
+      champ("Nom contenant", texte),
+    ),
+    h("div", { class: "actions" }, inactifs.label, vendables.label),
+    colonnes,
+    h(
+      "p",
+      { class: "note" },
+      "Le fichier est enregistré dans Documents\\Dokos\\exports, avec une feuille « À propos » qui rappelle les filtres. 10 000 lignes au plus.",
+    ),
+    h("div", { class: "actions" }, exporter),
+    resultat,
+  );
+
   panneau.append(
     h("h1", {}, "Export"),
     h(
       "p",
       { class: "sous-titre" },
-      "Clients, articles, devis, commandes, factures ou employés dans un fichier Excel, lu dans Dokos sans rien y modifier.",
+      "Clients, articles, devis, commandes, factures ou employés, et le grand livre d'un journal comptable, dans un fichier Excel lu dans Dokos sans rien y modifier.",
     ),
     segments,
-    h(
-      "div",
-      { class: "carte" },
-      h("h2", {}, "Filtres"),
-      h(
-        "div",
-        { class: "grille" },
-        champClient,
-        champGroupe,
-        champTerritoire,
-        champDu,
-        champAu,
-        champStatut,
-        champ("Nom contenant", texte),
-      ),
-      h("div", { class: "actions" }, inactifs.label, vendables.label),
-      colonnes,
-      h(
-        "p",
-        { class: "note" },
-        "Le fichier est enregistré dans Documents\\Dokos\\exports, avec une feuille « À propos » qui rappelle les filtres. 10 000 lignes au plus.",
-      ),
-      h("div", { class: "actions" }, exporter),
-      resultat,
-    ),
+    carteListe,
+    grandLivre.carte,
   );
+
+  // Palette : « Exporter le grand livre ».
+  document.addEventListener("dokos:grand-livre", () => montrerGrandLivre(true));
 
   void api
     .listesExportables()
@@ -240,7 +264,12 @@ export function initialiserExport(panneau: HTMLElement): void {
         b.addEventListener("click", () => choisirListe(l.nom));
         segments.append(b);
       }
-      choisirListe(disponibles[0]?.nom ?? "");
+      const bouton = h("button", { type: "button", "aria-pressed": "false", "data-liste": GRAND_LIVRE }, "Grand livre");
+      bouton.addEventListener("click", () => montrerGrandLivre(true));
+      segments.append(bouton);
+      // Ouvert depuis la palette avant la fin de la lecture : le grand livre reste affiché.
+      if (grandLivre.carte.hidden) choisirListe(disponibles[0]?.nom ?? "");
+      else montrerGrandLivre(true);
     })
     .catch((e: unknown) => segments.replaceChildren(alerteErreur(e)));
 }

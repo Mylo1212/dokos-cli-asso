@@ -1,7 +1,7 @@
 //! Configuration partagée par la ligne de commande et l'appli.
 //!
 //! - `config.toml` : URL, société, et une clé API **par profil** (ventes,
-//!   événements, RH), chacun lié à un utilisateur Dokos au rôle minimal.
+//!   événements, RH, comptabilité), chacun lié à un utilisateur Dokos au rôle minimal.
 //! - Secrets : trousseau du système (Gestionnaire d'identification sous
 //!   Windows), service [`SERVICE_TROUSSEAU`], jamais dans le fichier.
 //! - `[ia]` : serveur Open WebUI (adresse Tailscale), modèle et bases de
@@ -37,18 +37,21 @@ pub enum Profil {
     Ventes,
     /// Événements et formulaires web (rôle Website Manager).
     Evenements,
-    /// Échéances des contrats de travail et export des employés, en lecture (rôle HR User).
+    /// Export des employés, en lecture seule (rôle HR User ou lecture d'« Employee »).
     Rh,
+    /// Grand livre : lecture des écritures comptables et des journaux.
+    Compta,
 }
 
 impl Profil {
-    pub const TOUS: [Profil; 3] = [Profil::Ventes, Profil::Evenements, Profil::Rh];
+    pub const TOUS: [Profil; 4] = [Profil::Ventes, Profil::Evenements, Profil::Rh, Profil::Compta];
 
     pub fn nom(self) -> &'static str {
         match self {
             Self::Ventes => "ventes",
             Self::Evenements => "evenements",
             Self::Rh => "rh",
+            Self::Compta => "compta",
         }
     }
 
@@ -57,6 +60,7 @@ impl Profil {
             Self::Ventes => "Ventes",
             Self::Evenements => "Événements",
             Self::Rh => "RH",
+            Self::Compta => "Comptabilité",
         }
     }
 
@@ -68,6 +72,9 @@ impl Profil {
             }
             Self::Evenements => "Website Manager et création d'événements",
             Self::Rh => "HR User",
+            Self::Compta => {
+                "lecture seule de GL Entry, Accounting Journal et Account (Accounts User sans « Soumettre »)"
+            }
         }
     }
 }
@@ -86,7 +93,8 @@ impl std::str::FromStr for Profil {
             "ventes" | "vente" => Ok(Self::Ventes),
             "evenements" | "événements" | "evenement" | "événement" => Ok(Self::Evenements),
             "rh" => Ok(Self::Rh),
-            autre => Err(format!("profil inconnu : « {autre} » (ventes, evenements ou rh)")),
+            "compta" | "comptabilite" | "comptabilité" => Ok(Self::Compta),
+            autre => Err(format!("profil inconnu : « {autre} » (ventes, evenements, rh ou compta)")),
         }
     }
 }
@@ -100,6 +108,8 @@ pub struct Cles {
     pub evenements: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rh: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compta: Option<String>,
 }
 
 impl Cles {
@@ -108,6 +118,7 @@ impl Cles {
             Profil::Ventes => self.ventes.as_deref(),
             Profil::Evenements => self.evenements.as_deref(),
             Profil::Rh => self.rh.as_deref(),
+            Profil::Compta => self.compta.as_deref(),
         }
     }
 
@@ -117,6 +128,7 @@ impl Cles {
             Profil::Ventes => self.ventes = cle,
             Profil::Evenements => self.evenements = cle,
             Profil::Rh => self.rh = cle,
+            Profil::Compta => self.compta = cle,
         }
     }
 }
@@ -509,7 +521,9 @@ mod tests {
     fn profils() {
         assert_eq!("Événements".parse::<Profil>(), Ok(Profil::Evenements));
         assert_eq!("RH".parse::<Profil>(), Ok(Profil::Rh));
-        assert!("compta".parse::<Profil>().is_err());
+        assert_eq!("Comptabilité".parse::<Profil>(), Ok(Profil::Compta));
+        assert_eq!(Profil::TOUS.len(), 4);
+        assert!("paie".parse::<Profil>().is_err());
     }
 
     #[test]

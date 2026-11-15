@@ -1,7 +1,7 @@
 //! Client de l'API REST Frappe utilisée par Dokos.
 //!
-//! - Lecture : [`Dokos::lister`], [`Dokos::lire`], les recherches de [`recherche`]
-//!   et les listes exportables de [`export`].
+//! - Lecture : [`Dokos::lister`], [`Dokos::lire`], les recherches de [`recherche`],
+//!   les listes exportables de [`export`] et le grand livre ([`grand_livre`]).
 //! - Écriture : uniquement des opérations typées et validées, comme
 //!   [`vente::creer_brouillon`], précédée d'un contrôle de doublon
 //!   ([`doublon`]). Il n'existe pas de `POST` générique public.
@@ -20,6 +20,7 @@ pub mod evenement;
 pub mod export;
 pub mod fiche;
 pub mod formulaire;
+pub mod grand_livre;
 pub mod http;
 pub mod inscription;
 pub mod meta;
