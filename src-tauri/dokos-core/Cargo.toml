@@ -1,0 +1,21 @@
+[package]
+name = "dokos-core"
+description = "Client de l'API REST Frappe/Dokos, sans Tauri ni IA"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[features]
+# Expose `transport::faux::FauxTransport` aux tests des autres crates.
+faux = []
+
+[dependencies]
+reqwest.workspace = true
+rustls.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

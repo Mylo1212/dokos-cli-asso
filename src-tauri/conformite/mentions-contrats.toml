@@ -1,0 +1,182 @@
+# Mentions obligatoires des contrats de travail — BROUILLON À FAIRE VALIDER
+#
+# Ce fichier n'est pas un avis juridique. Il doit être relu par la personne
+# responsable (expert-comptable, juriste) et complété avec la convention
+# collective applicable. Tant que `valide_par` est vide, chaque rapport de
+# l'outil affiche « liste non validée ».
+#
+# Pour l'adapter : `dokos contrat regles --exporter` écrit ce fichier dans le
+# dossier de configuration (%APPDATA%\dokos-cli\mentions-contrats.toml), qui
+# est alors utilisé à la place de celui-ci.
+#
+# Une mention est satisfaite par un gabarit d'impression qui affiche l'un des
+# `champs` ({{ doc.champ }}) existant dans Dokos, ou qui contient l'un des
+# `textes` (casse, accents et ponctuation ignorés).
+# `pour` : tous, cdi, cdd, temps_partiel.
+# `donnee_obligatoire` : le champ doit aussi être rempli sur chaque contrat.
+# `proposition` : bloc ajouté au gabarit quand la mention manque.
+# « [à compléter …] » : texte à remplacer, signalé tant qu'il reste.
+
+version = "2026-11 brouillon"
+valide_par = ""
+valide_le = ""
+
+[categories]
+# Noms des types de contrat (DocType « Employment Contract Type ») dans Dokos.
+cdi = ["CDI"]
+cdd = ["CDD"]
+# En dessous de cette durée hebdomadaire, le contrat est à temps partiel.
+duree_temps_plein = 35.0
+
+# --- Toutes les embauches : informations à remettre au salarié ---
+
+[[mention]]
+id = "employeur"
+libelle = "Identité de l'employeur"
+reference = "C. trav. art. R1221-34"
+pour = ["tous"]
+champs = ["company"]
+proposition = "<p>Employeur : {{ doc.company }}</p>"
+
+[[mention]]
+id = "salarie"
+libelle = "Identité du salarié"
+reference = "C. trav. art. R1221-34"
+pour = ["tous"]
+champs = ["employee_name"]
+proposition = "<p>Salarié(e) : {{ doc.employee_name }}</p>"
+
+[[mention]]
+id = "lieu_travail"
+libelle = "Lieu de travail"
+reference = "C. trav. art. R1221-34"
+pour = ["tous"]
+champs = ["lieu_travail"]
+donnee_obligatoire = true
+proposition = "<p>Lieu de travail : {{ doc.lieu_travail }}</p>"
+
+[[mention]]
+id = "poste"
+libelle = "Intitulé du poste et fonctions"
+reference = "C. trav. art. R1221-34 ; L1242-12 (CDD)"
+pour = ["tous"]
+champs = ["designation"]
+donnee_obligatoire = true
+proposition = "<p>Poste occupé : {{ doc.designation }}</p>"
+
+[[mention]]
+id = "date_embauche"
+libelle = "Date d'embauche"
+reference = "C. trav. art. R1221-34"
+pour = ["tous"]
+champs = ["date_of_joining"]
+donnee_obligatoire = true
+proposition = "<p>Date d'entrée : {{ doc.get_formatted(\"date_of_joining\") }}</p>"
+
+[[mention]]
+id = "conges_payes"
+libelle = "Durée des congés payés"
+reference = "C. trav. art. R1221-34"
+pour = ["tous"]
+textes = ["congés payés"]
+proposition = "<p>Le salarié bénéficie des congés payés prévus par le Code du travail et la convention collective applicable.</p>"
+
+[[mention]]
+id = "periode_essai"
+libelle = "Durée et conditions de la période d'essai"
+reference = "C. trav. art. R1221-34 ; L1242-12 (CDD)"
+pour = ["tous"]
+champs = ["periode_essai"]
+textes = ["période d'essai"]
+proposition = "{% if doc.periode_essai %}<p>Période d'essai : {{ doc.periode_essai }}.</p>{% endif %}"
+
+[[mention]]
+id = "remuneration"
+libelle = "Éléments de la rémunération et périodicité de versement"
+reference = "C. trav. art. R1221-34 ; L1242-12 (CDD)"
+pour = ["tous"]
+champs = ["remuneration_brute"]
+donnee_obligatoire = true
+proposition = "<p>Rémunération brute mensuelle : {{ doc.get_formatted(\"remuneration_brute\") }}, versée mensuellement.</p>"
+
+[[mention]]
+id = "duree_travail"
+libelle = "Durée du travail"
+reference = "C. trav. art. R1221-34"
+pour = ["tous"]
+champs = ["weekly_working_hours"]
+donnee_obligatoire = true
+proposition = "<p>Durée hebdomadaire de travail : {{ doc.weekly_working_hours }} heures.</p>"
+
+[[mention]]
+id = "convention_collective"
+libelle = "Convention collective applicable"
+reference = "C. trav. art. R1221-34 ; L1242-12 (CDD)"
+pour = ["tous"]
+textes = ["convention collective"]
+proposition = "<p>Convention collective applicable : [à compléter : intitulé et numéro IDCC].</p>"
+
+[[mention]]
+id = "protection_sociale"
+libelle = "Caisse de retraite complémentaire et organisme de prévoyance"
+reference = "C. trav. art. R1221-34 ; L1242-12 (CDD)"
+pour = ["tous"]
+textes = ["retraite complémentaire"]
+proposition = "<p>Caisse de retraite complémentaire : [à compléter : nom et adresse]. Organisme de prévoyance : [à compléter, le cas échéant].</p>"
+
+# --- CDD ---
+
+[[mention]]
+id = "motif_cdd"
+libelle = "Motif précis du recours au CDD"
+reference = "C. trav. art. L1242-12"
+pour = ["cdd"]
+champs = ["motif_cdd"]
+donnee_obligatoire = true
+proposition = "<p>Le présent contrat est conclu pour le motif suivant : {{ doc.motif_cdd }}.</p>"
+
+[[mention]]
+id = "terme_cdd"
+libelle = "Date du terme du contrat"
+reference = "C. trav. art. L1242-12"
+pour = ["cdd"]
+champs = ["relieving_date"]
+donnee_obligatoire = true
+proposition = "<p>Le contrat prend fin le {{ doc.get_formatted(\"relieving_date\") }}.</p>"
+
+# --- Temps partiel ---
+
+[[mention]]
+id = "repartition"
+libelle = "Répartition de la durée du travail entre les jours de la semaine"
+reference = "C. trav. art. L3123-6"
+pour = ["temps_partiel"]
+champs = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+proposition = """<table class="repartition">
+<tr><th>Lundi</th><th>Mardi</th><th>Mercredi</th><th>Jeudi</th><th>Vendredi</th><th>Samedi</th><th>Dimanche</th></tr>
+<tr><td>{{ doc.monday or 0 }} h</td><td>{{ doc.tuesday or 0 }} h</td><td>{{ doc.wednesday or 0 }} h</td><td>{{ doc.thursday or 0 }} h</td><td>{{ doc.friday or 0 }} h</td><td>{{ doc.saturday or 0 }} h</td><td>{{ doc.sunday or 0 }} h</td></tr>
+</table>"""
+
+[[mention]]
+id = "modification_repartition"
+libelle = "Cas et nature des modifications de la répartition"
+reference = "C. trav. art. L3123-6"
+pour = ["temps_partiel"]
+textes = ["modification de la répartition", "répartition des horaires peut être modifiée"]
+proposition = "<p>La répartition des horaires peut être modifiée [à compléter : cas, nature et délai de prévenance].</p>"
+
+[[mention]]
+id = "communication_horaires"
+libelle = "Modalités de communication des horaires de travail"
+reference = "C. trav. art. L3123-6"
+pour = ["temps_partiel"]
+textes = ["communication des horaires", "horaires de travail sont communiqués"]
+proposition = "<p>Les horaires de travail sont communiqués [à compléter : modalités et délai].</p>"
+
+[[mention]]
+id = "heures_complementaires"
+libelle = "Limites des heures complémentaires"
+reference = "C. trav. art. L3123-6"
+pour = ["temps_partiel"]
+textes = ["heures complémentaires"]
+proposition = "<p>Le salarié pourra effectuer des heures complémentaires dans la limite de [à compléter : limite prévue].</p>"

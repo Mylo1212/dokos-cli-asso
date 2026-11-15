@@ -1,0 +1,48 @@
+name: Release
+
+# Sur un tag `vX.Y.Z` : installateurs Windows (NSIS, MSI) et macOS (DMG),
+# attachés à une release GitHub en brouillon, à publier à la main après essai
+# sur l'instance de test.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  installateurs:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: "-- -p dokos-assistant"
+          - os: macos-latest
+            args: "--target universal-apple-darwin -- -p dokos-assistant"
+    # `-p dokos-assistant` dans args : seulement l'appli, pas les autres
+    # paquets du workspace.
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signature facultative : APPLE_CERTIFICATE…, WINDOWS_CERTIFICATE… selon la
+          # documentation de Tauri. Sans ces secrets, les installateurs ne sont pas signés.
+        with:
+          projectPath: .
+          tagName: ${{ github.ref_name }}
+          releaseName: "Dokos Assistant ${{ github.ref_name }}"
+          releaseBody: "Voir CHANGELOG.md. À essayer sur l'instance de test avant déploiement."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

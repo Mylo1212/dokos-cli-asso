@@ -1,0 +1,61 @@
+name: Setup Windows
+
+# Construit l'installateur Windows (NSIS, `…-setup.exe`), le dépose en
+# artefact (onglet Actions) et, sur la branche par défaut, le publie dans la
+# pré-release « dernier-build » (page Releases du dépôt), remplacée à chaque
+# build. Lancement automatique à chaque push, ou à la main : Actions →
+# Setup Windows → Run workflow. Release versionnée : release.yml (tag vX.Y.Z).
+on:
+  workflow_dispatch:
+  push:
+    branches: ["**"]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: setup-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  setup-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      # beforeBuildCommand (npm run build) construit le frontend ; Tauri
+      # télécharge NSIS lui-même. `-p dokos-assistant` : seulement l'appli,
+      # pas les autres paquets du workspace.
+      - run: npx tauri build --bundles nsis -- -p dokos-assistant
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dokos-assistant-setup-${{ github.sha }}
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 30
+      # Remplace la pré-release « dernier-build » (et son tag) par ce build.
+      - name: Publier dans Releases (dernier-build)
+        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $setup = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $court = "${{ github.sha }}".Substring(0, 7)
+          gh release delete dernier-build --cleanup-tag --yes 2>$null
+          $global:LASTEXITCODE = 0
+          gh release create dernier-build "$($setup.FullName)" `
+            --target "${{ github.sha }}" --prerelease `
+            --title "Dokos Assistant $version (dernier build, $court)" `
+            --notes "Installateur Windows construit automatiquement depuis le commit $court. Non signé : SmartScreen demandera une confirmation. À essayer sur l'instance de test avant déploiement."

@@ -1,0 +1,91 @@
+# Appli Tauri « Dokos Assistant » et racine du workspace.
+#
+# Sans option, cargo vise ce paquet (l'appli), comme dans un projet Tauri
+# ordinaire : `tauri build` et `tauri dev` marchent tels quels. Pour tout le
+# workspace : `--workspace` (voir `npm run tout`). L'appli demande le frontend
+# construit (`npm run build`) et, sous Linux, WebKitGTK.
+[package]
+name = "dokos-assistant"
+description = "Interface pour créer devis, commandes, factures, formulaires et contrats dans Dokos"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+assistant-core.workspace = true
+conformite.workspace = true
+dokos-config.workspace = true
+dokos-core.workspace = true
+dokos-import.workspace = true
+open = "5.4"
+rfd.workspace = true
+rust_xlsxwriter.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2.12", features = [] }
+tracing.workspace = true
+
+[dev-dependencies]
+dokos-core = { workspace = true, features = ["faux"] }
+
+# Pas `forbid` comme les autres crates : les macros de Tauri doivent pouvoir
+# autoriser localement le code qu'elles génèrent.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+dbg_macro = "warn"
+unwrap_used = "warn"
+
+[workspace]
+resolver = "3"
+members = [".", "assistant-core", "conformite", "dokos-cli", "dokos-config", "dokos-core", "dokos-import"]
+
+[workspace.package]
+version = "0.2.3"
+edition = "2024"
+rust-version = "1.90"
+publish = false
+
+[workspace.dependencies]
+assistant-core = { path = "assistant-core" }
+conformite = { path = "conformite" }
+dokos-config = { path = "dokos-config" }
+dokos-core = { path = "dokos-core" }
+dokos-import = { path = "dokos-import" }
+
+clap = { version = "4.6", features = ["derive"] }
+dirs = "6"
+keyring = "4.2"
+# rustls avec ring : pas d'aws-lc-rs, donc ni CMake ni NASM sous Windows.
+# gzip : les réponses JSON de Dokos (structures de DocType, listes) sont
+# compressées par son serveur web quand le client le demande.
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "gzip", "rustls-no-provider", "query"] }
+rpassword = "7.5"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std", "ansi"] }
+calamine = "0.38"
+rust_xlsxwriter = "0.102"
+rfd = "0.17"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+print_stderr = "allow"
+unwrap_used = "warn"
+
+[profile.release]
+codegen-units = 1
+lto = true
+strip = true

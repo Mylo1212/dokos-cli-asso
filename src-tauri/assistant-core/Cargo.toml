@@ -1,0 +1,19 @@
+[package]
+name = "assistant-core"
+description = "Assistance par IA (Open WebUI) : extraction des demandes, résolution dans Dokos, propositions vérifiées"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+conformite.workspace = true
+dokos-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+dokos-core = { workspace = true, features = ["faux"] }
+
+[lints]
+workspace = true

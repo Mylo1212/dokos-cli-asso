@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dokos Assistant</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div class="appli">
+      <nav id="menu" class="menu" aria-label="Sections"></nav>
+      <div class="disposition">
+        <main>
+          <section id="accueil" class="panneau"></section>
+          <section id="ventes" class="panneau" hidden></section>
+          <section id="formulaires" class="panneau" hidden></section>
+          <section id="contrats" class="panneau" hidden></section>
+          <section id="import" class="panneau" hidden></section>
+          <section id="listes" class="panneau" hidden></section>
+          <section id="suivi" class="panneau" hidden></section>
+          <section id="reglages" class="panneau" hidden></section>
+        </main>
+        <aside id="chat" class="chat" aria-label="Assistant"></aside>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
