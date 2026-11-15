@@ -1,4 +1,4 @@
-# Utilisateurs API de Dokos pour Dokos Assistant
+# Utilisateurs API de Dokos pour Dokos Asso
 
 Un utilisateur API **par profil**, chacun avec le strict nécessaire. L'outil ne
 valide, ne soumet et n'annule jamais : aucun profil n'a besoin du droit
@@ -14,11 +14,11 @@ nécessaire.
 
 | DocType | Lire | Créer | Modifier | Pourquoi |
 |---|---|---|---|---|
-| Customer | oui | oui (import Clients) | | recherche, création à l'import |
-| Item | oui | oui (catalogue, import) | oui (activer, déplacer) | catalogue |
+| Customer | oui | oui (import Clients) | | listes déroulantes, export, création à l'import |
+| Item | oui | oui (catalogue, import Articles) | oui (activer, déplacer) | catalogue, listes déroulantes, export |
 | Item Group | oui | oui (sous-groupes) | | arbre du catalogue |
 | Item Price, Selling Settings, UOM | oui | | | prix indicatif, unités |
-| Customer Group, Territory | oui | | | listes du modèle Clients |
+| Customer Group, Territory | oui | | | listes du modèle Clients, filtres de l'export |
 | Quotation, Sales Order, Sales Invoice | oui | oui | | brouillons, doublons, transformation, brouillons en attente, factures en retard |
 
 Les méthodes `make_sales_order` et `make_sales_invoice` (Commander, Facturer)
@@ -31,23 +31,23 @@ demandent la lecture du document source validé et la création de la cible.
 |---|---|---|---|---|
 | Event | oui | oui | oui (publier) | événements |
 | Web Form | oui | oui | oui (publier) | formulaires d'inscription |
-| Event Registration | oui | oui (inscriptions saisies, import) | | inscrits |
+| Event Registration | oui | | | inscrits d'un événement (Suivi) |
 
 La lecture de la structure d'« Event Registration » (`getdoctype`) est
 nécessaire pour les questions. (Rôle standard proche : *Website Manager*.)
 
 ## Profil `rh`
 
+Facultatif : il ne sert qu'à lire. Sans lui, Suivi n'affiche pas les échéances
+des contrats de travail et l'export des employés est indisponible. L'appli ne
+crée ni employé ni contrat.
+
 | DocType | Lire | Créer | Modifier | Pourquoi |
 |---|---|---|---|---|
-| Employee | oui | oui | | employés |
-| Employment Contract | oui | oui | | contrats, alertes |
-| Employment Contract Type, Designation, Gender | oui | | | listes |
-| Print Format | oui | | | contrôle des formats, PDF |
+| Employee | oui | | | export des employés |
+| Employment Contract | oui | | | échéances de contrats (Suivi) |
 
-Le PDF utilise `frappe.utils.print_format.download_pdf` : lecture du contrat
-et du format suffisent. L'outil ne modifie **jamais** un format d'impression.
-(Rôle standard proche : *HR User*.)
+(Rôle standard proche : *HR User*, plus large que nécessaire.)
 
 ## Vérifier
 
@@ -57,4 +57,4 @@ cargo test -p dokos-core --test reel -- --ignored --nocapture   # hypothèses su
 ```
 
 Le second test lit la structure de chaque DocType utilisé et signale les
-champs absents de votre Dokos (champs personnalisés des contrats compris).
+champs absents de votre Dokos.
