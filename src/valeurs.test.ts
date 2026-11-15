@@ -303,22 +303,30 @@ describe("liste déroulante", () => {
 
 describe("grand livre", () => {
   it("construit la demande", () => {
-    expect(demandeGrandLivre({ journal: "VEN - SLA", du: "2026-10-01", au: "2026-10-31" })).toEqual({
+    const base = { journal: "VEN - SLA", du: "2026-10-01", au: "2026-10-31", journalFichier: "VEN" };
+    expect(demandeGrandLivre(base)).toEqual({
       journal: "VEN - SLA",
       du: "2026-10-01",
       au: "2026-10-31",
+      journalFichier: "VEN",
     });
-    expect(demandeGrandLivre({ journal: "VEN - SLA", du: "2026-10-31", au: "2026-10-31" })).toMatchObject({
-      du: "2026-10-31",
-    });
+    expect(demandeGrandLivre({ ...base, du: "2026-10-31" })).toMatchObject({ du: "2026-10-31" });
+  });
+
+  it("transmet le journal du fichier : VEN ou REC", () => {
+    const base = { journal: "VEN - SLA", du: "2026-10-01", au: "2026-10-31" };
+    expect(demandeGrandLivre({ ...base, journalFichier: "REC" })).toMatchObject({ journalFichier: "REC" });
+    expect(demandeGrandLivre({ ...base, journalFichier: "ACH" })).toMatch(/VEN ou REC/);
+    expect(demandeGrandLivre({ ...base, journalFichier: "" })).toMatch(/VEN ou REC/);
   });
 
   it("refuse une saisie incomplète ou incohérente", () => {
-    expect(demandeGrandLivre({ journal: null, du: "2026-10-01", au: "2026-10-31" })).toMatch(/journal/);
-    expect(demandeGrandLivre({ journal: "", du: "2026-10-01", au: "2026-10-31" })).toMatch(/journal/);
-    expect(demandeGrandLivre({ journal: "VEN - SLA", du: "", au: "2026-10-31" })).toMatch(/dates/);
-    expect(demandeGrandLivre({ journal: "VEN - SLA", du: "2026-10-01", au: "" })).toMatch(/dates/);
-    expect(demandeGrandLivre({ journal: "VEN - SLA", du: "2026-11-01", au: "2026-10-31" })).toMatch(/avant/);
+    const base = { journal: "VEN - SLA", du: "2026-10-01", au: "2026-10-31", journalFichier: "VEN" };
+    expect(demandeGrandLivre({ ...base, journal: null })).toMatch(/journal/);
+    expect(demandeGrandLivre({ ...base, journal: "" })).toMatch(/journal/);
+    expect(demandeGrandLivre({ ...base, du: "" })).toMatch(/dates/);
+    expect(demandeGrandLivre({ ...base, au: "" })).toMatch(/dates/);
+    expect(demandeGrandLivre({ ...base, du: "2026-11-01" })).toMatch(/avant/);
   });
 
   it("propose le mois précédent, y compris autour du changement d'année et en février", () => {

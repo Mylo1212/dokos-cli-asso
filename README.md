@@ -21,8 +21,8 @@ Open WebUI : commencez par une instance de test.
 |---|---|
 | **Ventes** (Créer) | Devis, commande ou facture en brouillon. Client et articles choisis dans des listes déroulantes ; **prix unitaire HT facultatif** par ligne (vide : prix de Dokos). Ou « À partir d'un modèle » : copie d'un document étiqueté « Template ». Catalogue des groupes d'articles. |
 | **Formulaires** (Créer) | Un événement et son formulaire d'inscription, créés non publiés, puis publiés d'un clic séparé. |
-| **Import** | Un modèle Excel généré depuis votre Dokos, analysé ligne par ligne, création tout ou rien : **Factures**, **Factures à partir d'un modèle**, **Articles**, **Clients**. |
-| **Export** | Clients, articles, devis, commandes, factures ou employés dans un fichier Excel, avec filtres (client, groupe, territoire, période, statut, nom) en listes déroulantes. **Grand livre** d'un journal comptable et d'une période, directement au format d'import (colonnes DATE à REFINTERNE). Lecture seule. |
+| **Import** | Un modèle Excel généré depuis votre Dokos, analysé ligne par ligne, création tout ou rien : **Factures**, **Paiements** (écritures de paiement en brouillon, en règlement de factures validées), **Articles**, **Clients**. |
+| **Export** | Clients, articles, devis, commandes, factures ou employés dans un fichier Excel, avec filtres (client, groupe, territoire, période, statut, nom) en listes déroulantes. **Grand livre** d'un journal comptable et d'une période, directement au format d'import (colonnes DATE à REFINTERNE), avec le journal du fichier au choix : **VEN** ou **REC**. Lecture seule. |
 | **Suivi** | Mes brouillons (et « Commander » / « Facturer »), inscrits d'un événement, factures en retard. Lecture seule, sauf la transformation qui crée un brouillon. |
 | **Accueil**, **Réglages**, **Assistant** | Tableau de bord ; adresse de Dokos et clés API ; chatbot Open WebUI qui qualifie la demande et pré-remplit Ventes, Formulaires ou Export. |
 
@@ -61,7 +61,7 @@ src-tauri/                   appli Tauri + racine du workspace (resolver 3, MSRV
 
    | Profil | Sert à | Rôles conseillés |
    |---|---|---|
-   | `ventes` | clients, articles, devis, commandes, factures, export | lecture clients/articles, lecture et création des documents de vente, **sans** validation |
+   | `ventes` | clients, articles, devis, commandes, factures, paiements, export | lecture clients/articles, lecture et création des documents de vente et des écritures de paiement, **sans** validation |
    | `evenements` | événements, formulaires web, inscrits | Website Manager, création d'événements |
    | `rh` (facultatif) | export des employés | lecture seule |
    | `compta` (facultatif) | export du grand livre | lecture de GL Entry, Accounting Journal, Account |
@@ -130,6 +130,8 @@ dokos articles lister Restauration
 dokos modele factures
 dokos importer factures "Documents\Dokos\modeles\modele-factures.xlsx" --simulation
 dokos importer clients clients.xlsx --rapport resultat.xlsx
+dokos modele paiements
+dokos importer paiements "Documents\Dokos\modeles\modele-paiements.xlsx" --simulation
 dokos exporter factures --statut impayee --du 01/10/2026 --au 31/10/2026
 dokos exporter clients --groupe Collectivités --sortie clients.xlsx
 dokos brouillons
@@ -139,6 +141,7 @@ dokos facture retards
 dokos evenement inscrits EV00042 --sortie inscrits.csv
 dokos journaux
 dokos grand-livre --journal VEN --du 01/10/2026 --au 31/10/2026
+dokos grand-livre --journal VEN --du 01/10/2026 --au 31/10/2026 --journal-fichier REC
 dokos diagnostic
 ```
 
@@ -164,7 +167,8 @@ Vérifiées dans le code de Dokos v5.18 et de l'appli `bookings` :
 | Client, article | `Customer`, `Item` | `customer_name`, `item_name`, `disabled`, `is_sales_item`, `has_variants` |
 | Devis | `Quotation` | `quotation_to`, `party_name`, `transaction_date`, `valid_till`, `items[]` |
 | Commande | `Sales Order` | `customer`, `delivery_date`, `items[].delivery_date` |
-| Facture | `Sales Invoice` | `customer`, `posting_date`, `set_posting_time`, `due_date`, `items[].rate` |
+| Facture | `Sales Invoice` | `customer`, `posting_date`, `set_posting_time`, `due_date`, `items[].rate`, `company`, `outstanding_amount` |
+| Paiement | `Payment Entry` (+ `Payment Entry Reference`, `Mode of Payment`, `Account`) | `payment_type`, `posting_date`, `paid_amount`, `received_amount`, `mode_of_payment`, `reference_no`, `reference_date`, `references[]` ; méthodes `get_payment_entry` et `get_bank_cash_account` ; `enabled`, `account_type` |
 | Événement | `Event` (+ bookings) | `subject`, `starts_on`, `published`, `allow_registrations`, `registration_form`, `max_number_of_registrations` |
 | Formulaire | `Web Form` → `Event Registration` | `first_name`, `last_name`, `email`, `mobile_number` + vos champs |
 | Grand livre (lecture) | `GL Entry`, `Accounting Journal`, `Account` | `posting_date`, `account`, `debit`, `credit`, `party`, `voucher_no`, `accounting_journal`, `is_cancelled`, `is_opening` ; `journal_code`, `journal_name`, `type` ; `account_number`, `account_type` |

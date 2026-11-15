@@ -2,7 +2,7 @@
 // ligne, choix des ambiguïtés, création tout ou rien, rapport.
 
 import { api, type AnalyseVue, type CasVue, type ChoixImport, type LigneImportVue } from "./api";
-import { alerte, alerteErreur, bouton, caseACocher, champ, h, lienDokos, lienFichier, occupe, tableau } from "./dom";
+import { alerte, bouton, caseACocher, h, lienDokos, lienFichier, occupe, tableau } from "./dom";
 import { perimerSuivi, viderListes } from "./donnees";
 
 export function initialiserImport(panneau: HTMLElement): void {
@@ -21,41 +21,9 @@ export function initialiserImport(panneau: HTMLElement): void {
   const seulementPrets = caseACocher("Créer seulement les documents prêts, même s'il reste des lignes à corriger");
   const autoriserDoublon = caseACocher("Créer même si un document identique existe déjà");
 
-  // Cas « à partir d'un modèle » : le document « Template » de Dokos à copier.
-  const choixModele = h("select", { "aria-label": "Modèle Dokos à copier" });
-  const champModele = champ("Modèle Dokos (étiquette « Template »)", choixModele, "large");
-  champModele.hidden = true;
-  let numeroModeles = 0;
-
-  async function chargerModeles(c: CasVue) {
-    const numero = ++numeroModeles;
-    champModele.hidden = c.typeModele === null;
-    if (c.typeModele === null) return;
-    choixModele.replaceChildren(h("option", { value: "" }, "Chargement des modèles…"));
-    try {
-      const modeles = await api.modelesVente(c.typeModele);
-      if (numero !== numeroModeles) return;
-      choixModele.replaceChildren(
-        h("option", { value: "" }, modeles.length === 0 ? "Aucun modèle « Template » de ce type" : "Choisir…"),
-        ...modeles.map((m) => h("option", { value: m.id }, `${m.titre} (${m.id})`)),
-      );
-    } catch (e) {
-      if (numero !== numeroModeles) return;
-      choixModele.replaceChildren(h("option", { value: "" }, "Modèles indisponibles"));
-      zoneModele.replaceChildren(alerteErreur(e, () => void chargerModeles(c)));
-    }
-  }
-
   const telecharger = bouton("Télécharger le modèle", "principal", async () => {
     if (!cas) return;
-    if (cas.typeModele !== null && !choixModele.value) {
-      zoneModele.replaceChildren(
-        alerte("attention", "À compléter", h("p", {}, "Choisissez d'abord le modèle Dokos à copier.")),
-      );
-      return;
-    }
-    const modele = cas.typeModele !== null ? choixModele.value : null;
-    const c = await occupe([telecharger], zoneModele, () => api.genererModele(cas!.nom, modele));
+    const c = await occupe([telecharger], zoneModele, () => api.genererModele(cas!.nom));
     if (c) {
       zoneModele.replaceChildren(
         alerte(
@@ -103,7 +71,6 @@ export function initialiserImport(panneau: HTMLElement): void {
     zoneModele.replaceChildren();
     zoneAnalyse.replaceChildren();
     zoneCreation.replaceChildren();
-    void chargerModeles(c);
   }
 
   async function chargerCas() {
@@ -251,7 +218,6 @@ export function initialiserImport(panneau: HTMLElement): void {
       h("h2", {}, h("span", { class: "etape" }, "1"), "Cas d'usage et modèle"),
       listeCas,
       descriptionCas,
-      h("div", { class: "grille" }, champModele),
       h("div", { class: "actions" }, telecharger),
       zoneModele,
     ),

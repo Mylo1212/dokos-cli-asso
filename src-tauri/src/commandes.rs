@@ -480,14 +480,13 @@ pub async fn cas_import() -> Resultat<Vec<CasVue>> {
 }
 
 #[tauri::command]
-pub async fn generer_modele(cas_nom: String, modele: Option<String>) -> Resultat<String> {
+pub async fn generer_modele(cas_nom: String) -> Resultat<String> {
     bloquant(move || {
         let cas = services_import::cas(&cas_nom)?;
         let (config, dokos) = connexions::connecter(profil(cas.profil())?)?;
         let chemin = services_import::generer_un_modele(
             &dokos,
             cas,
-            modele.as_deref(),
             &config.url_base(),
             config.societe.as_deref(),
             &dossier_documents()?,
@@ -516,14 +515,7 @@ pub async fn analyser_import(cas_nom: String, chemin: String, choix: Vec<ChoixIm
     bloquant(move || {
         let cas = services_import::cas(&cas_nom)?;
         let (config, dokos) = connexions::connecter(profil(cas.profil())?)?;
-        services_import::analyser_un_fichier(
-            &dokos,
-            cas,
-            Path::new(&chemin),
-            config.societe.as_deref(),
-            &choix,
-            Date::aujourdhui(),
-        )
+        services_import::analyser_un_fichier(&dokos, cas, Path::new(&chemin), config.societe.as_deref(), &choix)
     })
     .await
 }
@@ -550,7 +542,6 @@ pub async fn creer_import(
             seulement_prets,
             si_doublon(autoriser_doublon),
             &dossier_documents()?,
-            Date::aujourdhui(),
         );
         match &resultat {
             Ok(r) => {

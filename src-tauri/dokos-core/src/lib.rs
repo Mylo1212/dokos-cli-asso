@@ -26,6 +26,7 @@ pub mod inscription;
 pub mod meta;
 pub mod modele_vente;
 mod parallele;
+pub mod paiement;
 pub mod recherche;
 pub mod suivi;
 pub mod transformation;

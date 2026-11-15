@@ -10,7 +10,7 @@ use dokos_core::brouillons::{brouillons_de_vente, evenements_non_publies};
 use dokos_core::date::Date;
 use dokos_core::doublon::SiDoublon;
 use dokos_core::export::{FiltresExport, Reference, TypeListe, lire_tableau, retrouver_reference};
-use dokos_core::grand_livre::{Journal, lire_grand_livre, lister_journaux};
+use dokos_core::grand_livre::{Journal, JournalFichier, lire_grand_livre, lister_journaux};
 use dokos_core::inscription::lister_inscrits;
 use dokos_core::recherche::{Correspondance, trouver_client};
 use dokos_core::suivi::{factures_en_retard, soldes_par_client};
@@ -20,10 +20,7 @@ use dokos_import::analyse::{OptionsCreation, StatutCreation, cle_choix};
 use dokos_import::export::{chemin_export, chemin_grand_livre, ecrire_classeur, ecrire_grand_livre};
 use dokos_import::modele::{ContexteModele, nom_fichier_modele};
 use dokos_import::rapport::ecrire_rapport;
-use dokos_import::{
-    Cas, Options, Statut, analyser, creer, generer_modele, lire_fichier, referentiel_pour_fichier,
-    referentiel_pour_generer, verifier,
-};
+use dokos_import::{Cas, Options, Referentiel, Statut, analyser, creer, generer_modele, lire_fichier, verifier};
 
 use crate::erreur::Erreur;
 
@@ -110,13 +107,12 @@ pub fn activer_un_article<T: Transport>(dokos: &Dokos<T>, code: &str) -> Result<
 pub fn generer_un_modele<T: Transport>(
     dokos: &Dokos<T>,
     cas: Cas,
-    modele: Option<&str>,
     url_dokos: &str,
     societe: Option<&str>,
     sortie: Option<PathBuf>,
 ) -> Result<(), Erreur> {
     let aujourdhui = Date::aujourdhui();
-    let referentiel = referentiel_pour_generer(dokos, cas, modele)?;
+    let referentiel = Referentiel::lire(dokos, cas)?;
     let contexte = ContexteModele {
         url_dokos: url_dokos.to_owned(),
         date: aujourdhui.to_string(),
@@ -125,7 +121,7 @@ pub fn generer_un_modele<T: Transport>(
     let octets = generer_modele(cas, &referentiel, &contexte)?;
     let chemin = match sortie {
         Some(c) => c,
-        None => dokos_config::dossier_documents()?.join("modeles").join(nom_fichier_modele(cas, &referentiel)),
+        None => dokos_config::dossier_documents()?.join("modeles").join(nom_fichier_modele(cas)),
     };
     if let Some(dossier) = chemin.parent() {
         std::fs::create_dir_all(dossier).map_err(|e| Erreur::Fichier(format!("{} : {e}", dossier.display())))?;
@@ -169,12 +165,8 @@ pub fn importer<T: Transport>(
 ) -> Result<(), Erreur> {
     let tableau = lire_fichier(demande.fichier)?;
     tableau.verifier_marque(demande.cas)?;
-    let referentiel = referentiel_pour_fichier(dokos, demande.cas, &tableau)?;
-    let options = Options {
-        societe: societe.map(str::to_owned),
-        choix: demande.choix.iter().cloned().collect(),
-        aujourdhui: None,
-    };
+    let referentiel = Referentiel::lire(dokos, demande.cas)?;
+    let options = Options { societe: societe.map(str::to_owned), choix: demande.choix.iter().cloned().collect() };
     let mut analyse = analyser(dokos, demande.cas, &tableau, &referentiel, &options)?;
     verifier(dokos, &mut analyse)?;
 
@@ -353,12 +345,14 @@ fn trouver_journal<'a>(journaux: &'a [Journal], texte: &str) -> Result<&'a Journ
     }
 }
 
-/// Lit le grand livre du journal sur la période et l'écrit au format d'import.
+/// Lit le grand livre du journal sur la période et l'écrit au format d'import,
+/// avec `journal_fichier` (VEN ou REC) dans la colonne JOURNAL.
 pub fn exporter_grand_livre<T: Transport>(
     dokos: &Dokos<T>,
     journal: &str,
     du: Date,
     au: Date,
+    journal_fichier: JournalFichier,
     sortie: Option<PathBuf>,
 ) -> Result<(), Erreur> {
     let journaux = lister_journaux(dokos)?;
@@ -371,12 +365,12 @@ pub fn exporter_grand_livre<T: Transport>(
     if let Some(dossier) = chemin.parent().filter(|d| !d.as_os_str().is_empty()) {
         std::fs::create_dir_all(dossier).map_err(|e| Erreur::Fichier(format!("{} : {e}", dossier.display())))?;
     }
-    ecrire_grand_livre(&chemin, &grand_livre)?;
+    ecrire_grand_livre(&chemin, &grand_livre, journal_fichier)?;
     for ecartee in &grand_livre.ecartees {
         println!("Attention, écriture non exportée : {ecartee}");
     }
     println!(
-        "Journal {} du {du} au {au} : {} ligne(s), débit {:.2}, crédit {:.2}",
+        "Journal {} (fichier : {journal_fichier}) du {du} au {au} : {} ligne(s), débit {:.2}, crédit {:.2}",
         journal.id,
         grand_livre.lignes.len(),
         grand_livre.total_debit,

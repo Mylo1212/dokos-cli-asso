@@ -14,6 +14,7 @@ use dokos_config::{Config, Profil};
 use dokos_core::date::{Date, DateHeure};
 use dokos_core::export::TypeListe;
 use dokos_core::formulaire::Question;
+use dokos_core::grand_livre::JournalFichier;
 use dokos_core::recherche::{LIMITE_RECHERCHE, chercher_client};
 use dokos_core::transformation::Transformation;
 use dokos_core::vente::{SiDoublon, TypeVente};
@@ -41,12 +42,9 @@ enum Action {
     /// Articles vendables et catalogue (profil ventes)
     #[command(subcommand)]
     Articles(Articles),
-    /// Écrit le modèle Excel d'un cas d'import (factures, factures-modele, articles, clients)
+    /// Écrit le modèle Excel d'un cas d'import (factures, paiements, articles, clients)
     Modele {
         cas: String,
-        /// Document « Template » à copier, pour le cas factures-modele
-        #[arg(long)]
-        modele: Option<String>,
         #[arg(long)]
         sortie: Option<PathBuf>,
     },
@@ -117,6 +115,9 @@ enum Action {
         /// Fin de période, comprise
         #[arg(long, value_parser = saisie::date)]
         au: Date,
+        /// Valeur de la colonne JOURNAL du fichier : VEN (par défaut) ou REC
+        #[arg(long, default_value = "VEN")]
+        journal_fichier: JournalFichier,
         /// Fichier .xlsx à écrire ; par défaut Documents\Dokos\exports
         #[arg(long)]
         sortie: Option<PathBuf>,
@@ -362,17 +363,10 @@ fn executer(action: Action) -> Result<(), Erreur> {
             Ok(())
         }
         Action::Articles(articles) => gerer_articles(articles),
-        Action::Modele { cas, modele, sortie } => {
+        Action::Modele { cas, sortie } => {
             let cas = cas_import(&cas)?;
             let (config, dokos) = dokos_config::connecter(cas.profil().parse().map_err(Erreur::Saisie)?)?;
-            plus::generer_un_modele(
-                &dokos,
-                cas,
-                modele.as_deref(),
-                &config.url_base(),
-                config.societe.as_deref(),
-                sortie,
-            )
+            plus::generer_un_modele(&dokos, cas, &config.url_base(), config.societe.as_deref(), sortie)
         }
         Action::Importer { cas, fichier, simulation, seulement_prets, autoriser_doublon, choix, rapport } => {
             let cas = cas_import(&cas)?;
@@ -427,9 +421,9 @@ fn executer(action: Action) -> Result<(), Erreur> {
             let (_, dokos) = dokos_config::connecter(Profil::Compta)?;
             plus::afficher_journaux(&dokos)
         }
-        Action::GrandLivre { journal, du, au, sortie } => {
+        Action::GrandLivre { journal, du, au, journal_fichier, sortie } => {
             let (_, dokos) = dokos_config::connecter(Profil::Compta)?;
-            plus::exporter_grand_livre(&dokos, &journal, du, au, sortie)
+            plus::exporter_grand_livre(&dokos, &journal, du, au, journal_fichier, sortie)
         }
         Action::Brouillons => {
             let ventes = dokos_config::connecter(Profil::Ventes).ok().map(|(_, d)| d);

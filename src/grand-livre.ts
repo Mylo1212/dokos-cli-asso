@@ -1,16 +1,18 @@
-// Export du grand livre : un journal comptable de Dokos (liste déroulante) et
-// une période. Rust lit les écritures (lecture seule), les met au format
-// d'import (DATE, JOURNAL, GENERAL, AUXILIAIRE, DEBIT, CREDIT, LIBELLE,
-// REFINTERNE) et écrit le fichier Excel dans Documents\Dokos\exports : plus
-// besoin de passer par une macro après l'export.
+// Export du grand livre : un journal comptable de Dokos (liste déroulante),
+// une période et le journal écrit dans le fichier (VEN ou REC). Rust lit les
+// écritures (lecture seule), les met au format d'import (DATE, JOURNAL,
+// GENERAL, AUXILIAIRE, DEBIT, CREDIT, LIBELLE, REFINTERNE) et écrit le fichier
+// Excel dans Documents\Dokos\exports : plus besoin de passer par une macro
+// après l'export.
 
 import { api, type JournalVue } from "./api";
-import { alerte, bouton, champ, h, lienFichier, listeDeroulante, occupe, saisie } from "./dom";
+import { alerte, bouton, champ, h, lienFichier, listeDeroulante, occupe, saisie, selection } from "./dom";
 import { listes } from "./donnees";
 import { enregistrerPreference, preference } from "./etat";
-import { demandeGrandLivre, dossierDe, moisPrecedent, nombreFrancais, pluriel } from "./valeurs";
+import { demandeGrandLivre, dossierDe, JOURNAUX_FICHIER, moisPrecedent, nombreFrancais, pluriel } from "./valeurs";
 
 const PREFERENCE_JOURNAL = "grand-livre.journal";
+const PREFERENCE_JOURNAL_FICHIER = "grand-livre.journal-fichier";
 /** Écritures écartées montrées au plus (le fichier n'en tient aucune). */
 const ECARTEES_MONTREES = 10;
 
@@ -35,11 +37,24 @@ export function creerGrandLivre(): GrandLivre {
   const periode = moisPrecedent(new Date());
   const du = saisie({ type: "date", value: periode.du });
   const au = saisie({ type: "date", value: periode.au });
+  // Journal écrit dans la colonne JOURNAL du fichier : VEN par défaut, dernier choix retenu.
+  const journalFichier = selection([...JOURNAUX_FICHIER]);
+  journalFichier.setAttribute("aria-label", "Journal du fichier");
+  const dernierJournalFichier = preference(PREFERENCE_JOURNAL_FICHIER, "");
+  if (JOURNAUX_FICHIER.some((j) => j === dernierJournalFichier)) journalFichier.value = dernierJournalFichier;
+  journalFichier.addEventListener("change", () =>
+    enregistrerPreference(PREFERENCE_JOURNAL_FICHIER, journalFichier.value),
+  );
   const resultat = h("div", { "aria-live": "polite" });
   const exporter = bouton("Créer le fichier Excel", "principal", () => lancerExport());
 
   async function lancerExport() {
-    const demande = demandeGrandLivre({ journal: journal?.id ?? null, du: du.value, au: au.value });
+    const demande = demandeGrandLivre({
+      journal: journal?.id ?? null,
+      du: du.value,
+      au: au.value,
+      journalFichier: journalFichier.value,
+    });
     if (typeof demande === "string") {
       resultat.replaceChildren(alerte("attention", "À compléter", h("p", {}, demande)));
       return;
@@ -82,14 +97,15 @@ export function creerGrandLivre(): GrandLivre {
     h(
       "div",
       { class: "grille" },
-      champ("Journal comptable", choixJournal.racine, "large"),
+      champ("Journal comptable (Dokos)", choixJournal.racine, "large"),
+      champ("Journal du fichier", journalFichier),
       champ("Du", du),
       champ("Au", au),
     ),
     h(
       "p",
       { class: "note" },
-      "Une ligne par écriture, au format d'import : DATE, JOURNAL (toujours VEN), GENERAL (numéro du compte), AUXILIAIRE (ERP sur le compte 411), DEBIT, CREDIT, LIBELLE (tiers), REFINTERNE (pièce). Les écritures annulées et les à-nouveaux sont exclus ; les comptes de tiers sont en valeurs nettes. Lecture seule dans Dokos.",
+      "Une ligne par écriture, au format d'import : DATE, JOURNAL (VEN ou REC, au choix ci-dessus, le même sur toutes les lignes), GENERAL (numéro du compte), AUXILIAIRE (ERP sur le compte 411), DEBIT, CREDIT, LIBELLE (tiers), REFINTERNE (pièce). Les écritures annulées et les à-nouveaux sont exclus ; les comptes de tiers sont en valeurs nettes. Lecture seule dans Dokos.",
     ),
     h("div", { class: "actions" }, exporter),
     resultat,

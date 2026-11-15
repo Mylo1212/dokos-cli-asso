@@ -396,8 +396,6 @@ pub struct CasVue {
     pub resultat: String,
     pub profil: String,
     pub colonnes: Vec<ColonneVue>,
-    /// `devis`, `commande` ou `facture` pour un cas « à partir d'un modèle ».
-    pub type_modele: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -541,13 +539,16 @@ pub struct JournalVue {
     pub type_journal: String,
 }
 
-/// Grand livre demandé par l'interface : journal et dates (`AAAA-MM-JJ`).
+/// Grand livre demandé par l'interface : journal Dokos, dates (`AAAA-MM-JJ`) et
+/// journal écrit dans le fichier.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct DemandeGrandLivre {
     pub journal: String,
     pub du: String,
     pub au: String,
+    /// Valeur de la colonne JOURNAL du fichier : `VEN` ou `REC` (vide : `VEN`).
+    pub journal_fichier: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

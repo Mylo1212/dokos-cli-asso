@@ -257,8 +257,6 @@ export interface CasVue {
   resultat: string;
   profil: string;
   colonnes: { nom: string; obligatoire: boolean; aide: string }[];
-  /** Cas « à partir d'un modèle » : type du document « Template » à choisir. */
-  typeModele: TypeVente | null;
 }
 
 export interface ChoixImport {
@@ -315,10 +313,15 @@ export interface JournalVue {
   typeJournal: string;
 }
 
+/** Valeur de la colonne JOURNAL du fichier du grand livre. */
+export type JournalFichier = "VEN" | "REC";
+
 export interface DemandeGrandLivre {
   journal: string;
   du: string;
   au: string;
+  /** Colonne JOURNAL du fichier final. */
+  journalFichier: JournalFichier;
 }
 
 export interface ResultatGrandLivre {
@@ -514,7 +517,7 @@ export const api = {
     invoke<ResultatListe>("exporter_liste", { demande, aujourdhui }),
 
   casImport: () => invoke<CasVue[]>("cas_import"),
-  genererModele: (casNom: string, modele: string | null = null) => invoke<string>("generer_modele", { casNom, modele }),
+  genererModele: (casNom: string) => invoke<string>("generer_modele", { casNom }),
   choisirFichier: () => invoke<string | null>("choisir_fichier"),
   analyserImport: (casNom: string, chemin: string, choix: ChoixImport[]) =>
     invoke<AnalyseVue>("analyser_import", { casNom, chemin, choix }),

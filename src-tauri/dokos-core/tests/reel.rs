@@ -60,7 +60,26 @@ fn hypotheses_sur_les_doctypes() {
     let attendus: &[(&str, &[&str])] = &[
         ("Quotation", &["quotation_to", "party_name", "transaction_date", "valid_till", "items"]),
         ("Sales Order", &["customer", "delivery_date", "po_no", "items"]),
-        ("Sales Invoice", &["customer", "posting_date", "set_posting_time", "due_date", "po_no", "outstanding_amount"]),
+        (
+            "Sales Invoice",
+            &["customer", "posting_date", "set_posting_time", "due_date", "po_no", "outstanding_amount", "company"],
+        ),
+        (
+            "Payment Entry",
+            &[
+                "payment_type",
+                "posting_date",
+                "paid_amount",
+                "received_amount",
+                "mode_of_payment",
+                "reference_no",
+                "reference_date",
+                "references",
+                "accounting_journal",
+            ],
+        ),
+        ("Payment Entry Reference", &["reference_doctype", "reference_name", "allocated_amount"]),
+        ("Mode of Payment", &["enabled", "type", "accounts"]),
         ("Item", &["item_name", "item_group", "stock_uom", "is_sales_item", "has_variants", "disabled"]),
         ("Item Group", &["parent_item_group", "is_group"]),
         ("Customer", &["customer_name", "customer_type", "customer_group", "territory"]),

@@ -7,11 +7,11 @@ use assistant_core::listes::PropositionListe;
 use dokos_config::Profil;
 use dokos_core::date::Date;
 use dokos_core::export::{FiltresExport, Reference, TypeListe, retrouver_reference, valeurs_possibles};
-use dokos_core::grand_livre::{lire_grand_livre, lister_journaux};
+use dokos_core::grand_livre::{JournalFichier, lire_grand_livre, lister_journaux};
 use dokos_core::{Dokos, Transport};
 use dokos_import::export::{chemin_export, chemin_grand_livre, ecrire_classeur, ecrire_grand_livre};
 
-use crate::erreurs::erreur;
+use crate::erreurs::{ErreurVue, erreur};
 use crate::services::Resultat;
 use crate::services_ia::vue_choix;
 use crate::vues::*;
@@ -82,10 +82,16 @@ pub fn exporter_grand_livre<T: Transport>(
 ) -> Resultat<ResultatGrandLivreVue> {
     let du: Date = demande.du.trim().parse().map_err(erreur)?;
     let au: Date = demande.au.trim().parse().map_err(erreur)?;
+    let journal_fichier: JournalFichier = demande.journal_fichier.parse().map_err(ErreurVue::validation)?;
     let grand_livre = lire_grand_livre(dokos, &demande.journal, du, au).map_err(erreur)?;
     let chemin = chemin_grand_livre(dossier, &demande.journal, du, au).map_err(erreur)?;
-    ecrire_grand_livre(&chemin, &grand_livre).map_err(erreur)?;
-    tracing::info!(journal = %demande.journal, lignes = grand_livre.lignes.len(), "grand livre exporté");
+    ecrire_grand_livre(&chemin, &grand_livre, journal_fichier).map_err(erreur)?;
+    tracing::info!(
+        journal = %demande.journal,
+        journal_fichier = %journal_fichier,
+        lignes = grand_livre.lignes.len(),
+        "grand livre exporté"
+    );
     Ok(ResultatGrandLivreVue {
         chemin: chemin.display().to_string(),
         lignes: grand_livre.lignes.len(),
@@ -231,8 +237,12 @@ mod tests {
             200,
             &json!({"data": [{"posting_date": "2026-10-31", "account": "411 - Clients - SLA", "debit": 120.0, "credit": 0.0, "party": "Mairie", "voucher_no": "F-1"}]}),
         );
-        let demande =
-            DemandeGrandLivre { journal: "VEN - SLA".into(), du: "2026-10-01".into(), au: "2026-10-31".into() };
+        let demande = DemandeGrandLivre {
+            journal: "VEN - SLA".into(),
+            du: "2026-10-01".into(),
+            au: "2026-10-31".into(),
+            journal_fichier: "REC".into(),
+        };
         let r = exporter_grand_livre(&Dokos::new(&dokos), &demande, &dossier).expect("export");
         assert_eq!((r.lignes, r.total_debit, r.total_credit), (1, 120.0, 0.0));
         assert!(
@@ -241,12 +251,20 @@ mod tests {
             r.chemin
         );
         assert!(std::fs::read(&r.chemin).expect("fichier").starts_with(b"PK"));
+        // Le journal choisi est écrit dans la colonne JOURNAL.
+        let relu = dokos_import::lire_fichier(std::path::Path::new(&r.chemin)).expect("relecture");
+        assert_eq!(relu.lignes[0].1[1], "REC");
 
-        // Dates illisibles ou période inversée : refusées avant toute lecture.
+        // Dates illisibles, période inversée ou journal du fichier inconnu : refusés avant toute lecture.
         let appels = dokos.requetes().len();
         let mauvaise = DemandeGrandLivre { du: "hier".into(), ..demande.clone() };
         assert_eq!(
             exporter_grand_livre(&Dokos::new(&dokos), &mauvaise, &dossier).expect_err("date").genre,
+            "validation"
+        );
+        let inconnu = DemandeGrandLivre { journal_fichier: "ACH".into(), ..demande.clone() };
+        assert_eq!(
+            exporter_grand_livre(&Dokos::new(&dokos), &inconnu, &dossier).expect_err("journal").genre,
             "validation"
         );
         let inversee = DemandeGrandLivre { du: "2026-11-01".into(), ..demande };

@@ -13,7 +13,7 @@
 //! | Colonne | Contenu |
 //! |---|---|
 //! | DATE | date de comptabilisation |
-//! | JOURNAL | [`CODE_JOURNAL_FICHIER`], quel que soit le journal lu |
+//! | JOURNAL | [`JournalFichier`] (`VEN` ou `REC`, au choix), quel que soit le journal lu |
 //! | GENERAL | chiffres en tête du compte (`411 - Clients - SLA` → 411) |
 //! | AUXILIAIRE | [`AUXILIAIRE_CLIENTS`] si le compte est exactement [`COMPTE_CLIENTS`] |
 //! | DEBIT, CREDIT | montants (0 si vide) |
@@ -42,8 +42,51 @@ const JOURNAUX_MAX: usize = 500;
 /// Comptes lus au plus (plan comptable).
 const COMPTES_MAX: usize = 20_000;
 
-/// Valeur de la colonne JOURNAL du fichier.
-pub const CODE_JOURNAL_FICHIER: &str = "VEN";
+/// Valeur de la colonne JOURNAL du fichier final : le journal du logiciel de
+/// comptabilité qui reçoit l'import, au choix de l'utilisateur, quel que soit
+/// le journal lu dans Dokos.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum JournalFichier {
+    /// Journal des ventes.
+    #[default]
+    Ven,
+    /// Journal des règlements (recettes).
+    Rec,
+}
+
+impl JournalFichier {
+    pub const TOUS: [JournalFichier; 2] = [Self::Ven, Self::Rec];
+
+    /// Code écrit dans la colonne JOURNAL.
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Ven => "VEN",
+            Self::Rec => "REC",
+        }
+    }
+}
+
+impl std::fmt::Display for JournalFichier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.code())
+    }
+}
+
+impl std::str::FromStr for JournalFichier {
+    type Err = String;
+
+    /// Casse et espaces ignorés ; texte vide : `VEN`.
+    fn from_str(texte: &str) -> Result<Self, Self::Err> {
+        let texte = texte.trim();
+        if texte.is_empty() {
+            return Ok(Self::default());
+        }
+        Self::TOUS
+            .into_iter()
+            .find(|j| j.code().eq_ignore_ascii_case(texte))
+            .ok_or_else(|| format!("journal du fichier « {texte} » inconnu (attendu : VEN ou REC)"))
+    }
+}
 /// Code du compte clients, seul à porter un auxiliaire.
 pub const COMPTE_CLIENTS: u64 = 411;
 /// Valeur de la colonne AUXILIAIRE des lignes du compte clients.
@@ -287,6 +330,15 @@ mod tests {
         assert_eq!(gl.lignes[2].general, 44_571_100, "code tel quel, comptes inconnus du plan compris");
         assert_eq!((gl.total_debit, gl.total_credit), (120.0, 120.0));
         assert!(gl.ecartees.is_empty());
+    }
+
+    #[test]
+    fn journal_du_fichier() {
+        assert_eq!("VEN".parse(), Ok(JournalFichier::Ven));
+        assert_eq!(" rec ".parse(), Ok(JournalFichier::Rec));
+        assert_eq!("".parse(), Ok(JournalFichier::Ven), "vide : VEN");
+        assert!("ACH".parse::<JournalFichier>().expect_err("inconnu").contains("VEN ou REC"));
+        assert_eq!((JournalFichier::Ven.code(), JournalFichier::Rec.to_string().as_str()), ("VEN", "REC"));
     }
 
     #[test]

@@ -10,8 +10,7 @@ use dokos_import::analyse::{OptionsCreation, StatutCreation, cle_choix};
 use dokos_import::modele::{ContexteModele, nom_fichier_modele};
 use dokos_import::rapport::ecrire_rapport;
 use dokos_import::{
-    Analyse, Cas, Options, Referentiel, Statut, analyser, creer, generer_modele, lire_fichier,
-    referentiel_pour_fichier, referentiel_pour_generer, verifier,
+    Analyse, Cas, Options, Referentiel, Statut, analyser, creer, generer_modele, lire_fichier, verifier,
 };
 
 use crate::erreurs::{ErreurVue, erreur as texte};
@@ -26,7 +25,6 @@ pub fn cas(nom: &str) -> Resultat<Cas> {
 
 /// Cas disponibles, avec leurs colonnes.
 pub fn cas_disponibles() -> Vec<CasVue> {
-    let referentiel = Referentiel::default();
     Cas::TOUS
         .into_iter()
         .map(|c| CasVue {
@@ -35,28 +33,24 @@ pub fn cas_disponibles() -> Vec<CasVue> {
             resultat: c.resultat().to_owned(),
             profil: c.profil().to_owned(),
             colonnes: c
-                .colonnes(&referentiel)
+                .colonnes()
                 .into_iter()
                 .map(|col| ColonneVue { nom: col.nom, obligatoire: col.obligatoire, aide: col.aide })
                 .collect(),
-            type_modele: c.type_modele().map(|t| t.libelle().to_owned()),
         })
         .collect()
 }
 
 /// Génère le modèle du cas dans `dossier/modeles/` et renvoie son chemin.
-/// `modele` : document « Template » copié, pour les cas « à partir d'un modèle ».
-#[allow(clippy::too_many_arguments)]
 pub fn generer_un_modele<T: Transport>(
     dokos: &Dokos<T>,
     cas: Cas,
-    modele: Option<&str>,
     url_dokos: &str,
     societe: Option<&str>,
     dossier: &Path,
     aujourdhui: Date,
 ) -> Resultat<PathBuf> {
-    let referentiel = referentiel_pour_generer(dokos, cas, modele).map_err(texte)?;
+    let referentiel = Referentiel::lire(dokos, cas).map_err(texte)?;
     let contexte = ContexteModele {
         url_dokos: url_dokos.to_owned(),
         date: aujourdhui.to_string(),
@@ -65,15 +59,14 @@ pub fn generer_un_modele<T: Transport>(
     let octets = generer_modele(cas, &referentiel, &contexte).map_err(texte)?;
     let dossier = dossier.join(DOSSIER_MODELES);
     std::fs::create_dir_all(&dossier).map_err(|e| ErreurVue::fichier(format!("{} : {e}", dossier.display())))?;
-    let chemin = dossier.join(nom_fichier_modele(cas, &referentiel));
+    let chemin = dossier.join(nom_fichier_modele(cas));
     std::fs::write(&chemin, octets).map_err(|e| ErreurVue::fichier(format!("{} : {e}", chemin.display())))?;
     tracing::info!(cas = %cas, chemin = %chemin.display(), "modèle généré");
     Ok(chemin)
 }
 
-fn options(societe: Option<&str>, choix: &[ChoixImport], aujourdhui: Date) -> Options {
-    let mut options =
-        Options { societe: societe.map(str::to_owned), choix: BTreeMap::new(), aujourdhui: Some(aujourdhui) };
+fn options(societe: Option<&str>, choix: &[ChoixImport]) -> Options {
+    let mut options = Options { societe: societe.map(str::to_owned), choix: BTreeMap::new() };
     for c in choix {
         options.choix.insert(cle_choix(&c.champ, &c.texte), c.id.clone());
     }
@@ -87,13 +80,11 @@ fn preparer<T: Transport>(
     chemin: &Path,
     societe: Option<&str>,
     choix: &[ChoixImport],
-    aujourdhui: Date,
 ) -> Resultat<Analyse> {
     let tableau = lire_fichier(chemin).map_err(texte)?;
     tableau.verifier_marque(cas).map_err(texte)?;
-    let referentiel = referentiel_pour_fichier(dokos, cas, &tableau).map_err(texte)?;
-    let mut analyse =
-        analyser(dokos, cas, &tableau, &referentiel, &options(societe, choix, aujourdhui)).map_err(texte)?;
+    let referentiel = Referentiel::lire(dokos, cas).map_err(texte)?;
+    let mut analyse = analyser(dokos, cas, &tableau, &referentiel, &options(societe, choix)).map_err(texte)?;
     verifier(dokos, &mut analyse).map_err(texte)?;
     Ok(analyse)
 }
@@ -161,9 +152,8 @@ pub fn analyser_un_fichier<T: Transport>(
     chemin: &Path,
     societe: Option<&str>,
     choix: &[ChoixImport],
-    aujourdhui: Date,
 ) -> Resultat<AnalyseVue> {
-    let analyse = preparer(dokos, cas, chemin, societe, choix, aujourdhui)?;
+    let analyse = preparer(dokos, cas, chemin, societe, choix)?;
     Ok(vue_analyse(&analyse, chemin))
 }
 
@@ -185,9 +175,8 @@ pub fn executer_un_import<T: Transport>(
     seulement_prets: bool,
     si_doublon: SiDoublon,
     dossier: &Path,
-    aujourdhui: Date,
 ) -> Resultat<ResultatImportVue> {
-    let analyse = preparer(dokos, cas, chemin, societe, choix, aujourdhui)?;
+    let analyse = preparer(dokos, cas, chemin, societe, choix)?;
     let resultats = creer(dokos, &analyse, &OptionsCreation { seulement_prets, si_doublon }).map_err(texte)?;
     let rapport = chemin_rapport(dossier, chemin);
     let octets = ecrire_rapport(&analyse, Some(&resultats)).map_err(texte)?;
@@ -272,24 +261,16 @@ mod tests {
         // Référentiel : clients, articles.
         faux.repondre_json(200, &json!({"data": [{"name": "CUST-2", "customer_name": "Mairie de Crest"}]}));
         faux.repondre_json(200, &json!({"data": [{"name": "REPAS", "item_name": "Repas", "stock_uom": "Unité", "item_group": "Restauration"}]}));
-        let modele = generer_un_modele(
-            &dokos,
-            Cas::Factures,
-            None,
-            "https://dokos.exemple.fr",
-            Some("Les Amanins"),
-            &dossier,
-            jour,
-        )
-        .expect("modèle");
+        let modele =
+            generer_un_modele(&dokos, Cas::Factures, "https://dokos.exemple.fr", Some("Les Amanins"), &dossier, jour)
+                .expect("modèle");
         assert!(modele.ends_with("modeles/modele-factures.xlsx"));
 
         // Le modèle rempli : on réécrit un CSV ? Non : on relit le modèle lui-même (sa ligne d'exemple
         // est ignorée), ce qui donne un import vide mais valide.
         faux.repondre_json(200, &json!({"data": [{"name": "CUST-2", "customer_name": "Mairie de Crest"}]}));
         faux.repondre_json(200, &json!({"data": []}));
-        let analyse =
-            analyser_un_fichier(&dokos, Cas::Factures, &modele, Some("Les Amanins"), &[], jour).expect("analyse");
+        let analyse = analyser_un_fichier(&dokos, Cas::Factures, &modele, Some("Les Amanins"), &[]).expect("analyse");
         assert_eq!(analyse.cas, "factures");
         assert!(analyse.lignes.is_empty());
         assert!(analyse.avertissements.iter().any(|a| a.contains("aucune ligne")));
@@ -297,7 +278,7 @@ mod tests {
         // Un CSV n'a pas de marque : refusé.
         let csv = dossier.join("factures.csv");
         std::fs::write(&csv, "Lot;Client\n;Mairie\n").expect("csv");
-        let erreur = analyser_un_fichier(&dokos, Cas::Factures, &csv, None, &[], jour).expect_err("sans marque");
+        let erreur = analyser_un_fichier(&dokos, Cas::Factures, &csv, None, &[]).expect_err("sans marque");
         assert_eq!(erreur.genre, "fichier");
         let _ = std::fs::remove_dir_all(dossier);
     }
@@ -309,9 +290,11 @@ mod tests {
         let liste = cas_disponibles();
         assert_eq!(liste.len(), 4);
         assert!(liste[0].colonnes.iter().any(|c| c.obligatoire));
-        let modele = liste.iter().find(|c| c.nom == "factures-modele").expect("cas modèle");
-        assert_eq!(modele.type_modele.as_deref(), Some("facture"));
-        assert_eq!(liste.iter().filter(|c| c.type_modele.is_none()).count(), 3);
+        let noms: Vec<&str> = liste.iter().map(|c| c.nom.as_str()).collect();
+        assert_eq!(noms, ["factures", "paiements", "articles", "clients"]);
+        let paiements = liste.iter().find(|c| c.nom == "paiements").expect("cas paiements");
+        assert_eq!(paiements.libelle, "Paiements");
+        assert!(paiements.colonnes.iter().any(|c| c.nom == "Facture" && c.obligatoire));
         assert!(liste.iter().all(|c| c.nom != "employes" && c.nom != "evenements" && c.nom != "devis"));
         let rapport = chemin_rapport(Path::new("/tmp/Dokos"), Path::new("/x/factures octobre.xlsx"));
         assert!(rapport.ends_with("factures-octobre.resultat.xlsx"));

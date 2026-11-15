@@ -8,6 +8,7 @@ import type {
   DemandeVente,
   DemandeVenteModele,
   ErreurVue,
+  JournalFichier,
   ListeVue,
   TypeVente,
 } from "./api";
@@ -208,14 +209,21 @@ export interface SaisieGrandLivre {
   journal: string | null;
   du: string;
   au: string;
+  /** Journal écrit dans le fichier : VEN ou REC. */
+  journalFichier: string;
 }
+
+/** Journaux possibles de la colonne JOURNAL du fichier, VEN en premier (défaut). */
+export const JOURNAUX_FICHIER: readonly JournalFichier[] = ["VEN", "REC"];
 
 /** Demande de grand livre, ou le message à afficher si la saisie est incomplète. */
 export function demandeGrandLivre(saisie: SaisieGrandLivre): DemandeGrandLivre | string {
   if (!saisie.journal) return "Choisissez un journal comptable dans la liste.";
+  const journalFichier = JOURNAUX_FICHIER.find((j) => j === saisie.journalFichier);
+  if (!journalFichier) return "Choisissez le journal du fichier : VEN ou REC.";
   if (!saisie.du || !saisie.au) return "Renseignez les dates de début et de fin.";
   if (saisie.du > saisie.au) return "La date de fin est avant la date de début.";
-  return { journal: saisie.journal, du: saisie.du, au: saisie.au };
+  return { journal: saisie.journal, du: saisie.du, au: saisie.au, journalFichier };
 }
 
 /** Premier et dernier jour du mois précédent `jour`, en `AAAA-MM-JJ`. */

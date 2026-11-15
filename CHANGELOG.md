@@ -4,6 +4,31 @@ Format : une section par version, les changements regroupés par nature. Les
 versions suivent `MAJEUR.MINEUR.CORRECTIF` ; un tag `vX.Y.Z` déclenche la
 construction des installateurs (voir `.github/workflows/release.yml`).
 
+## 0.3.0
+
+### Ajouté
+
+- **Import › Paiements** (`dokos modele paiements`, `dokos importer paiements`) :
+  une ligne par paiement reçu en règlement d'une facture validée (facture, date,
+  montant facultatif, mode de paiement, référence). Dokos prépare l'écriture de
+  paiement (`get_payment_entry`) ; l'appli y pose date, mode de paiement et
+  référence, puis la crée **en brouillon**, à valider dans Dokos. Contrôlés avant
+  toute création : facture à régler, montant dans le reste dû (lignes précédentes
+  du fichier déduites), mode de paiement actif et son compte d'encaissement,
+  référence obligatoire sur un compte bancaire, doublon (même facture, date et
+  montant). Listes déroulantes des factures à régler et des modes de paiement.
+  Droits supplémentaires du profil `ventes` : `Payment Entry` (lire, créer),
+  `Mode of Payment` et `Account` (lire).
+- **Grand livre : journal du fichier** au choix, `VEN` (par défaut) ou `REC`,
+  écrit dans la colonne JOURNAL (liste « Journal du fichier » dans Export ›
+  Grand livre, dernier choix retenu ; `dokos grand-livre --journal-fichier REC`).
+
+### Retiré
+
+- **Import › Factures à partir d'un modèle** (et l'option `--modele` de
+  `dokos modele`). Le mode « À partir d'un modèle » de l'onglet Ventes reste. Un
+  ancien fichier de ce cas est refusé.
+
 ## 0.2.0
 
 ### Ajouté

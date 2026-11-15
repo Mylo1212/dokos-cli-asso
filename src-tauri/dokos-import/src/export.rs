@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use dokos_core::date::Date;
 use dokos_core::export::{Cellule, Tableau, TypeListe};
-use dokos_core::grand_livre::{CODE_JOURNAL_FICHIER, GrandLivre};
+use dokos_core::grand_livre::{GrandLivre, JournalFichier};
 use rust_xlsxwriter::{ExcelDateTime, Format, Workbook, XlsxError};
 
 use crate::ErreurImport;
@@ -112,7 +112,7 @@ pub fn chemin_grand_livre(dossier: &Path, journal: &str, du: Date, au: Date) -> 
     let dossier = dossier.join(DOSSIER_EXPORTS);
     std::fs::create_dir_all(&dossier).map_err(|e| ErreurImport::Fichier(format!("{} : {e}", dossier.display())))?;
     let journal = nom_sur(journal);
-    let journal = if journal.is_empty() { CODE_JOURNAL_FICHIER.to_owned() } else { journal };
+    let journal = if journal.is_empty() { JournalFichier::default().code().to_owned() } else { journal };
     let base = format!("grand-livre-{journal}-{du}-{au}");
     let mut chemin = dossier.join(format!("{base}.xlsx"));
     let mut n = 2;
@@ -131,13 +131,18 @@ pub const ENTETES_GRAND_LIVRE: [&str; 8] =
     ["DATE", "JOURNAL", "GENERAL", "AUXILIAIRE", "DEBIT", "CREDIT", "LIBELLE", "REFINTERNE"];
 
 /// Écrit le grand livre : une seule feuille, huit colonnes. Dates `jj/mm/aaaa`,
-/// comptes et montants numériques ; la colonne JOURNAL vaut [`CODE_JOURNAL_FICHIER`].
-pub fn ecrire_grand_livre(chemin: &Path, grand_livre: &GrandLivre) -> Result<(), ErreurImport> {
-    construire_grand_livre(chemin, grand_livre)
+/// comptes et montants numériques ; la colonne JOURNAL vaut le code de `journal`
+/// (`VEN` ou `REC`) sur toutes les lignes.
+pub fn ecrire_grand_livre(
+    chemin: &Path,
+    grand_livre: &GrandLivre,
+    journal: JournalFichier,
+) -> Result<(), ErreurImport> {
+    construire_grand_livre(chemin, grand_livre, journal)
         .map_err(|e| ErreurImport::Fichier(format!("{} : {e}", chemin.display())))
 }
 
-fn construire_grand_livre(chemin: &Path, grand_livre: &GrandLivre) -> Result<(), XlsxError> {
+fn construire_grand_livre(chemin: &Path, grand_livre: &GrandLivre, journal: JournalFichier) -> Result<(), XlsxError> {
     let mut classeur = Workbook::new();
     let format_date = Format::new().set_num_format("dd/mm/yyyy");
     let format_compte = Format::new().set_num_format("0");
@@ -157,7 +162,7 @@ fn construire_grand_livre(chemin: &Path, grand_livre: &GrandLivre) -> Result<(),
                 feuille.write_string(r, 0, ligne.date.to_string())?;
             }
         }
-        feuille.write_string(r, 1, CODE_JOURNAL_FICHIER)?;
+        feuille.write_string(r, 1, journal.code())?;
         feuille.write_number_with_format(r, 2, ligne.general as f64, &format_compte)?;
         if !ligne.auxiliaire.is_empty() {
             feuille.write_string(r, 3, ligne.auxiliaire)?;
@@ -219,7 +224,7 @@ mod tests {
         let au: Date = "2026-11-30".parse().expect("date");
         let chemin = chemin_grand_livre(&dossier, "VEN - SLA", jour(), au).expect("chemin");
         assert!(chemin.ends_with("grand-livre-VEN-SLA-2026-11-04-2026-11-30.xlsx"), "{}", chemin.display());
-        ecrire_grand_livre(&chemin, &gl).expect("classeur");
+        ecrire_grand_livre(&chemin, &gl, JournalFichier::Ven).expect("classeur");
 
         // Relu par la lecture des imports : en-têtes, puis une ligne de données.
         let tableau = crate::lire_fichier(&chemin).expect("relecture");
@@ -227,6 +232,12 @@ mod tests {
         assert_eq!(tableau.lignes.len(), 1);
         let valeurs = &tableau.lignes[0].1;
         assert_eq!(&valeurs[1..], ["VEN", "411", "ERP", "120.5", "0", "=1+1", "ACC-SINV-1"]);
+
+        // Même grand livre, journal REC : seule la colonne JOURNAL change.
+        let rec = dossier.join("rec.xlsx");
+        ecrire_grand_livre(&rec, &gl, JournalFichier::Rec).expect("classeur REC");
+        let tableau = crate::lire_fichier(&rec).expect("relecture REC");
+        assert_eq!(&tableau.lignes[0].1[1..], ["REC", "411", "ERP", "120.5", "0", "=1+1", "ACC-SINV-1"]);
 
         // Un second export de la même période ne remplace pas le premier.
         let suivant = chemin_grand_livre(&dossier, "VEN - SLA", jour(), au).expect("chemin");

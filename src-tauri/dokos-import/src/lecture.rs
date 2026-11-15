@@ -23,9 +23,6 @@ pub struct Marque {
     pub cas: Cas,
     pub version: u32,
     pub dokos: String,
-    /// Modèle Dokos copié (cas « à partir d'un modèle ») et sa date de modification.
-    pub modele: Option<String>,
-    pub modele_modifie: Option<String>,
 }
 
 /// Tableau lu : en-têtes et lignes de texte, avec le numéro de ligne du fichier.
@@ -179,14 +176,7 @@ fn lire_marque(plage: &Range<Data>) -> Option<Marque> {
     }
     let cas = Cas::depuis_nom(valeurs.get("cas")?)?;
     let version = valeurs.get("version")?.parse().ok()?;
-    let non_vide = |cle: &str| valeurs.get(cle).filter(|v| !v.is_empty()).cloned();
-    Some(Marque {
-        cas,
-        version,
-        dokos: valeurs.get("dokos").cloned().unwrap_or_default(),
-        modele: non_vide("modele"),
-        modele_modifie: non_vide("modele_modifie"),
-    })
+    Some(Marque { cas, version, dokos: valeurs.get("dokos").cloned().unwrap_or_default() })
 }
 
 fn tableau_depuis_plage(plage: &Range<Data>) -> Result<Tableau, ErreurImport> {
@@ -343,13 +333,7 @@ mod tests {
     #[test]
     fn marque_et_exemple() {
         let tableau = Tableau {
-            marque: Some(Marque {
-                cas: Cas::Factures,
-                version: 1,
-                dokos: String::new(),
-                modele: None,
-                modele_modifie: None,
-            }),
+            marque: Some(Marque { cas: Cas::Factures, version: 1, dokos: String::new() }),
             entetes: vec!["Client".into()],
             lignes: vec![(2, vec!["Mairie de Crest".into()]), (3, vec![" ".into()]), (4, vec!["CCAS".into()])],
         };
@@ -360,13 +344,7 @@ mod tests {
         let sans_marque = Tableau::default();
         assert!(matches!(sans_marque.verifier_marque(Cas::Factures), Err(ErreurImport::Modele(_))));
         let future = Tableau {
-            marque: Some(Marque {
-                cas: Cas::Factures,
-                version: 99,
-                dokos: String::new(),
-                modele: None,
-                modele_modifie: None,
-            }),
+            marque: Some(Marque { cas: Cas::Factures, version: 99, dokos: String::new() }),
             ..Default::default()
         };
         assert!(future.verifier_marque(Cas::Factures).is_err());

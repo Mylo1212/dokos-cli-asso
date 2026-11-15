@@ -112,8 +112,7 @@ champs existants d'« Event Registration » dans Dokos.
 
 ## Import
 
-Quatre cas d'usage : **Factures**, **Factures à partir d'un modèle**,
-**Articles** et **Clients**.
+Quatre cas d'usage : **Factures**, **Paiements**, **Articles** et **Clients**.
 
 1. Choisissez le **cas d'usage** et **téléchargez le modèle**. Il est généré
    depuis votre Dokos : les listes déroulantes du classeur contiennent vos
@@ -129,12 +128,17 @@ Quatre cas d'usage : **Factures**, **Factures à partir d'un modèle**,
 
 - **Factures** : une ligne par article ; les lignes qui partagent le même
   **Lot** forment une seule facture. Les factures sont des brouillons.
-- **Factures à partir d'un modèle** : choisissez le modèle « Template » de
-  Dokos, puis téléchargez le fichier. Une ligne par facture : client, date
-  d'arrivée, date de départ, puis une colonne de quantité par article du modèle
-  (vide ou 0 : article retiré ; une ligne sans aucune quantité est refusée).
-  Tout le reste vient du modèle. Si le modèle est modifié dans Dokos après le
-  téléchargement, l'import est refusé : régénérez le fichier.
+- **Paiements** : une ligne par paiement reçu en règlement d'une **facture déjà
+  validée** dans Dokos. Colonnes : **Facture** (liste des factures dont le solde
+  n'est pas nul), **Date du paiement**, **Montant** (facultatif : vide, tout le
+  reste dû), **Mode de paiement** (liste des modes actifs de Dokos) et
+  **Référence** (numéro de chèque, de virement…). Dokos prépare l'écriture de
+  paiement (client, comptes, lien vers la facture) et le mode de paiement
+  détermine le compte d'encaissement ; la référence est **obligatoire** quand ce
+  compte est bancaire. Plusieurs lignes pour une même facture (règlement en
+  plusieurs fois) ne peuvent pas dépasser ensemble son reste dû. Chaque paiement
+  est créé en **brouillon** : la facture n'est soldée qu'une fois le paiement
+  validé dans Dokos. Le journal comptable est attribué par Dokos.
 - **Articles** : créés **désactivés**, à activer depuis le catalogue ou dans
   Dokos. Un code ou un libellé déjà présent n'est pas recréé.
 - **Clients** : un client de même nom n'est pas recréé ; contacts et adresses
@@ -191,11 +195,13 @@ d'un journal sur une période, **directement au format d'import** : il remplace
 l'export du rapport « Grand livre » de Dokos suivi de la macro de mise en forme.
 Il demande la clé du profil Comptabilité.
 
-1. **Journal comptable** : liste déroulante des journaux actifs de Dokos (code,
-   nom, type). Le dernier journal choisi est retenu.
-2. **Du** et **Au** : dates de comptabilisation, comprises ; le mois précédent
+1. **Journal comptable (Dokos)** : liste déroulante des journaux actifs de Dokos
+   (code, nom, type). Le dernier journal choisi est retenu.
+2. **Journal du fichier** : `VEN` (par défaut) ou `REC`, écrit dans la colonne
+   JOURNAL de toutes les lignes. Le dernier choix est retenu.
+3. **Du** et **Au** : dates de comptabilisation, comprises ; le mois précédent
    est proposé.
-3. **Créer le fichier Excel**.
+4. **Créer le fichier Excel**.
 
 Le fichier `Documents\Dokos\exports\grand-livre-<journal>-<du>-<au>.xlsx` a une
 feuille, une ligne par écriture, et les colonnes :
@@ -203,7 +209,7 @@ feuille, une ligne par écriture, et les colonnes :
 | Colonne | Contenu |
 |---|---|
 | DATE | date de comptabilisation (`jj/mm/aaaa`) |
-| JOURNAL | toujours `VEN`, quel que soit le journal exporté |
+| JOURNAL | `VEN` ou `REC`, au choix, quel que soit le journal de Dokos exporté |
 | GENERAL | chiffres en tête du compte (`411 - Clients - SLA` → 411) |
 | AUXILIAIRE | `ERP` sur le compte 411, vide ailleurs |
 | DEBIT, CREDIT | montants (0 si vide) |

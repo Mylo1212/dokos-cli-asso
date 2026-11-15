@@ -75,7 +75,7 @@ impl Onglet {
         match self {
             Self::Ventes => "devis, commandes et factures clients en brouillon ; catalogue d'articles",
             Self::Import => {
-                "créer en masse depuis un tableau Excel (factures, factures à partir d'un modèle, articles, clients ; modèle généré, analyse, création tout ou rien)"
+                "créer en masse depuis un tableau Excel (factures, paiements de factures, articles, clients ; modèle généré, analyse, création tout ou rien)"
             }
             Self::Export => "fichier Excel des clients, articles, devis, commandes, factures ou employés, avec filtres",
             Self::Suivi => {

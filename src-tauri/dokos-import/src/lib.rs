@@ -1,7 +1,7 @@
 //! Import de tableaux (Excel ou CSV) vérifiés, et modèles générés par l'outil.
 //!
-//! - [`cas`] : les cas d'usage (factures, factures à partir d'un modèle
-//!   « Template », articles, clients) et leurs colonnes.
+//! - [`cas`] : les cas d'usage (factures, paiements, articles, clients) et
+//!   leurs colonnes.
 //! - [`referentiel`] : les listes de valeurs valides lues dans Dokos, jointes
 //!   au modèle et utilisées à l'import.
 //! - [`modele`] : génération du classeur modèle (mode d'emploi, données,
@@ -28,9 +28,6 @@ pub mod referentiel;
 use std::fmt;
 
 use dokos_core::DokosError;
-use dokos_core::client::Dokos;
-use dokos_core::modele_vente::{ErreurModele, lire_modele, verifier_version};
-use dokos_core::transport::Transport;
 
 /// Version du format des modèles. À incrémenter quand les colonnes changent.
 pub const VERSION_MODELE: u32 = 1;
@@ -75,51 +72,6 @@ impl From<DokosError> for ErreurImport {
     }
 }
 
-/// Référentiel pour générer le modèle d'un cas. `modele` : identifiant du
-/// document « Template » à copier, obligatoire pour les cas « à partir d'un modèle ».
-pub fn referentiel_pour_generer<T: Transport>(
-    dokos: &Dokos<T>,
-    cas: Cas,
-    modele: Option<&str>,
-) -> Result<Referentiel, ErreurImport> {
-    let mut referentiel = Referentiel::lire(dokos, cas)?;
-    if let Some(type_vente) = cas.type_modele() {
-        let id = modele.map(str::trim).filter(|m| !m.is_empty()).ok_or_else(|| {
-            ErreurImport::Modele("choisissez le modèle Dokos (étiquette « Template ») à copier".into())
-        })?;
-        referentiel.modele = Some(lire_modele(dokos, type_vente, id).map_err(erreur_modele)?);
-    }
-    Ok(referentiel)
-}
-
-/// Référentiel pour analyser un fichier : pour un cas « à partir d'un
-/// modèle », le modèle désigné par la marque du fichier, inchangé depuis.
-pub fn referentiel_pour_fichier<T: Transport>(
-    dokos: &Dokos<T>,
-    cas: Cas,
-    tableau: &Tableau,
-) -> Result<Referentiel, ErreurImport> {
-    let mut referentiel = Referentiel::lire(dokos, cas)?;
-    if let Some(type_vente) = cas.type_modele() {
-        let marque = tableau.marque.as_ref();
-        let id = marque.and_then(|m| m.modele.as_deref()).ok_or_else(|| {
-            ErreurImport::Modele("ce fichier n'indique pas de modèle Dokos : régénérez-le depuis l'appli".into())
-        })?;
-        let modele = lire_modele(dokos, type_vente, id).map_err(erreur_modele)?;
-        verifier_version(&modele, marque.and_then(|m| m.modele_modifie.as_deref()).unwrap_or(""))
-            .map_err(erreur_modele)?;
-        referentiel.modele = Some(modele);
-    }
-    Ok(referentiel)
-}
-
-fn erreur_modele(e: ErreurModele) -> ErreurImport {
-    match e {
-        ErreurModele::Dokos(d) => ErreurImport::Dokos(d),
-        autre => ErreurImport::Modele(autre.to_string()),
-    }
-}
-
 pub use analyse::{
     Analyse, DocumentPrepare, LigneAnalysee, Options, ResultatDocument, Statut, analyser, creer, verifier,
 };
@@ -130,7 +82,9 @@ pub use referentiel::Referentiel;
 
 #[cfg(test)]
 mod tests {
-    use dokos_core::date::Date;
+    use dokos_core::client::Dokos;
+    use dokos_core::doublon::SiDoublon;
+    use dokos_core::paiement::FactureARegler;
     use dokos_core::transport::Methode;
     use dokos_core::transport::faux::FauxTransport;
     use serde_json::json;
@@ -138,134 +92,152 @@ mod tests {
     use super::*;
     use crate::analyse::{OptionsCreation, StatutCreation};
     use crate::modele::ContexteModele;
+    use crate::referentiel::{LISTE_FACTURES, LISTE_MODES_PAIEMENT};
 
-    fn jour() -> Date {
-        "2026-11-05".parse().expect("date")
+    fn facture(id: &str, reste: f64) -> FactureARegler {
+        FactureARegler {
+            id: id.into(),
+            client: "CUST-2".into(),
+            nom_client: "Mairie de Crest".into(),
+            date: "2026-10-31".into(),
+            reste_du: reste,
+            devise: "EUR".into(),
+            societe: "Les Amanins".into(),
+        }
     }
 
-    fn clients(faux: &FauxTransport) {
-        faux.repondre_json(200, &json!({"data": [{"name": "CUST-2", "customer_name": "Mairie de Crest"}]}));
-    }
-
-    /// Lecture du modèle, puis de la structure de son DocType.
-    fn modele(faux: &FauxTransport, modifie: &str) {
-        document_modele(faux, modifie);
-        faux.repondre_json(
-            200,
-            &json!({"docs": [{"name": "Sales Invoice", "fields": [
-                {"fieldname": "custom_date_arrivee", "fieldtype": "Date"},
-                {"fieldname": "custom_date_depart", "fieldtype": "Date"},
-            ]}]}),
+    /// Ce que la lecture de Dokos a mis dans le référentiel : deux factures, deux modes.
+    fn referentiel() -> Referentiel {
+        let factures = vec![facture("ACC-SINV-1", 200.0), facture("ACC-SINV-2", 50.0)];
+        let mut r = Referentiel::default();
+        r.ajouter(LISTE_FACTURES, factures.iter().map(|f| (f.id.clone(), f.detail())).collect());
+        r.ajouter(
+            LISTE_MODES_PAIEMENT,
+            vec![("Espèces".into(), "Espèces".into()), ("Virement".into(), "Virement".into())],
         );
+        r.factures_a_regler = factures;
+        r
     }
 
-    /// Lecture du modèle seul : la structure du DocType est déjà en mémoire du client.
-    fn document_modele(faux: &FauxTransport, modifie: &str) {
-        faux.repondre_json(200, &json!({"data": [{"name": "ACC-SINV-0007", "_user_tags": ",Template"}]}));
-        faux.repondre_json(
-            200,
-            &json!({"data": {
-                "name": "ACC-SINV-0007", "title": "Séminaire", "docstatus": 0, "currency": "EUR",
-                "modified": modifie, "taxes_and_charges": "TVA 10 %",
-                "items": [
-                    {"name": "l1", "item_code": "REPAS", "item_name": "Repas complet", "qty": 20, "rate": 18.5, "uom": "Unité"},
-                    {"name": "l2", "item_code": "SALLE-G", "item_name": "Grande salle", "qty": 2, "rate": 300, "uom": "Jour"},
-                ],
-            }}),
-        );
+    /// Compte d'encaissement d'un mode, puis son type.
+    fn compte(faux: &FauxTransport, type_compte: &str) {
+        faux.repondre_json(200, &json!({"message": {"account": "512 - Banque - SLA"}}));
+        faux.repondre_json(200, &json!({"data": {"name": "512 - Banque - SLA", "account_type": type_compte}}));
+    }
+
+    fn ecriture_preparee(facture: &str, montant: f64) -> serde_json::Value {
+        json!({"message": {
+            "doctype": "Payment Entry", "name": "new-payment-entry-1", "docstatus": 0, "payment_type": "Receive",
+            "paid_amount": montant, "received_amount": montant,
+            "references": [{"reference_name": facture, "allocated_amount": montant}],
+        }})
     }
 
     #[test]
-    fn import_a_partir_d_un_modele() {
+    fn modele_et_import_de_paiements() {
+        let referentiel = referentiel();
+        let contexte =
+            ContexteModele { url_dokos: "https://dokos.test".into(), date: "2026-11-05".into(), societe: None };
+        let octets = generer_modele(Cas::Paiements, &referentiel, &contexte).expect("modèle");
+        let mut tableau = lire_octets(&octets, "xlsx").expect("lecture");
+        tableau.verifier_marque(Cas::Paiements).expect("marque du cas");
+        let noms: Vec<&str> = tableau.entetes.iter().map(String::as_str).collect();
+        assert_eq!(noms, ["Facture *", "Date du paiement *", "Montant", "Mode de paiement *", "Référence"]);
+
+        // Quatre lignes : un virement complet (montant vide), un règlement partiel puis son solde,
+        // et un paiement qui dépasse le reste dû.
+        let ligne = |valeurs: [&str; 5]| valeurs.iter().map(|v| (*v).to_owned()).collect::<Vec<_>>();
+        tableau.lignes = vec![
+            (3, ligne(["ACC-SINV-1", "05/11/2026", "", "Virement", "VIR-1"])),
+            (4, ligne(["ACC-SINV-2", "06/11/2026", "20", "espèces", ""])),
+            (5, ligne(["ACC-SINV-2", "07/11/2026", "40", "Espèces", ""])),
+            (6, ligne(["ACC-SINV-9", "07/11/2026", "10", "Espèces", ""])),
+        ];
         let faux = FauxTransport::new();
         let dokos = Dokos::new(&faux);
-        clients(&faux);
-        modele(&faux, "2026-10-01 09:00:00");
-        let referentiel =
-            referentiel_pour_generer(&dokos, Cas::FacturesModele, Some("ACC-SINV-0007")).expect("référentiel");
-        let colonnes = Cas::FacturesModele.colonnes(&referentiel);
-        let noms: Vec<&str> = colonnes.iter().map(|c| c.nom.as_str()).collect();
-        assert_eq!(
-            noms,
-            ["Client", "Date d'arrivée", "Date de départ", "Qté Repas complet (REPAS)", "Qté Grande salle (SALLE-G)"]
+        compte(&faux, "Bank"); // Virement
+        compte(&faux, "Cash"); // Espèces
+        let mut analyse =
+            analyser(&dokos, Cas::Paiements, &tableau, &referentiel, &Options::default()).expect("analyse");
+        assert_eq!(analyse.documents.len(), 4);
+        assert!(analyse.documents[0].pret() && analyse.documents[1].pret());
+        assert!(
+            matches!(&analyse.lignes[2].statut, Statut::Invalide(m) if m.contains("reste dû") && m.contains("30.00")),
+            "{:?}",
+            analyse.lignes[2].statut
         );
-        let contexte =
-            ContexteModele { url_dokos: "https://dokos.test".into(), date: jour().to_string(), societe: None };
-        let octets = generer_modele(Cas::FacturesModele, &referentiel, &contexte).expect("modèle");
-        let mut tableau = lire_octets(&octets, "xlsx").expect("lecture");
-        let marque = tableau.marque.clone().expect("marque");
-        assert_eq!(marque.modele.as_deref(), Some("ACC-SINV-0007"));
-        assert_eq!(marque.modele_modifie.as_deref(), Some("2026-10-01 09:00:00"));
-        tableau.verifier_marque(Cas::FacturesModele).expect("marque du cas");
+        assert!(matches!(&analyse.lignes[3].statut, Statut::Invalide(m) if m.contains("ACC-SINV-9")));
+        assert!(analyse.documents[0].libelle.contains("200.00 EUR"), "{}", analyse.documents[0].libelle);
 
-        // Deux lignes saisies : une complète, une sans aucune quantité.
-        tableau.lignes = vec![
-            (3, vec!["CUST-2".into(), "01/12/2026".into(), "03/12/2026".into(), "30".into(), String::new()]),
-            (4, vec!["CUST-2".into(), "01/12/2026".into(), "03/12/2026".into(), "0".into(), String::new()]),
-        ];
-        clients(&faux);
-        document_modele(&faux, "2026-10-01 09:00:00");
-        let referentiel = referentiel_pour_fichier(&dokos, Cas::FacturesModele, &tableau).expect("référentiel");
-        // « CUST-2 » est reconnu dans la liste des clients du référentiel : aucune recherche.
-        let options = Options { aujourdhui: Some(jour()), ..Options::default() };
-        let mut analyse = analyser(&dokos, Cas::FacturesModele, &tableau, &referentiel, &options).expect("analyse");
-        assert_eq!(analyse.documents.len(), 2);
-        assert!(analyse.documents[0].pret());
-        assert!(analyse.documents[0].libelle.contains("Mairie de Crest"), "{}", analyse.documents[0].libelle);
-        assert!(matches!(&analyse.lignes[1].statut, Statut::Invalide(m) if m.contains("aucune quantité")));
-
-        faux.repondre_json(200, &json!({"data": []})); // doublons
+        faux.repondre_json(200, &json!({"data": []})); // doublon, ligne 1
+        faux.repondre_json(200, &json!({"data": []})); // doublon, ligne 2
         verifier(&dokos, &mut analyse).expect("vérification");
-        faux.repondre_json(200, &json!({"data": []})); // doublons, à la création
-        faux.repondre_json(
-            200,
-            &json!({"data": {"name": "ACC-SINV-0050", "docstatus": 0, "grand_total": 610.5, "currency": "EUR"}}),
-        );
-        let resultats = creer(
-            &dokos,
-            &analyse,
-            &OptionsCreation { seulement_prets: true, si_doublon: dokos_core::doublon::SiDoublon::Reutiliser },
-        )
-        .expect("création");
-        assert_eq!(resultats[0].statut, StatutCreation::Cree);
-        assert_eq!(resultats[1].statut, StatutCreation::Ignore);
-        let post = faux.requetes().into_iter().find(|r| r.methode == Methode::Post).expect("POST");
-        let corps = post.corps.expect("corps");
-        assert_eq!(corps["customer"], "CUST-2");
-        assert_eq!(corps["posting_date"], "2026-11-05");
-        assert_eq!(corps["custom_date_depart"], "2026-12-03");
-        assert_eq!(corps["taxes_and_charges"], "TVA 10 %");
-        assert_eq!(corps["items"].as_array().map(Vec::len), Some(1));
+        assert_eq!(analyse.doublons(), 0);
+
+        // « Seulement les prêts » : les deux premiers paiements sont créés, les autres ignorés.
+        faux.repondre_json(200, &json!({"data": []})); // doublon à la création
+        faux.repondre_json(200, &ecriture_preparee("ACC-SINV-1", 200.0));
+        faux.repondre_json(200, &json!({"data": {"name": "ACC-PAY-1", "docstatus": 0, "paid_amount": 200.0}}));
+        faux.repondre_json(200, &json!({"data": []}));
+        faux.repondre_json(200, &ecriture_preparee("ACC-SINV-2", 20.0));
+        faux.repondre_json(200, &json!({"data": {"name": "ACC-PAY-2", "docstatus": 0, "paid_amount": 20.0}}));
+        let resultats =
+            creer(&dokos, &analyse, &OptionsCreation { seulement_prets: true, si_doublon: SiDoublon::Reutiliser })
+                .expect("création");
+        let statuts: Vec<_> = resultats.iter().map(|r| r.statut.clone()).collect();
         assert_eq!(
-            corps["items"][0],
-            json!({"item_code": "REPAS", "item_name": "Repas complet", "rate": 18.5, "uom": "Unité", "qty": 30.0})
+            statuts,
+            [StatutCreation::Cree, StatutCreation::Cree, StatutCreation::Ignore, StatutCreation::Ignore]
         );
+        assert_eq!(resultats[0].doctype, "Payment Entry");
+        assert_eq!(resultats[0].id.as_deref(), Some("ACC-PAY-1"));
+        let envoyes: Vec<_> = faux
+            .requetes()
+            .into_iter()
+            .filter(|r| r.methode == Methode::Post && r.chemin == "/api/resource/Payment%20Entry")
+            .filter_map(|r| r.corps)
+            .collect();
+        assert_eq!(envoyes.len(), 2);
+        assert_eq!(
+            (envoyes[0]["mode_of_payment"].as_str(), envoyes[0]["reference_no"].as_str()),
+            (Some("Virement"), Some("VIR-1"))
+        );
+        assert_eq!(
+            (envoyes[1]["mode_of_payment"].as_str(), envoyes[1]["posting_date"].as_str()),
+            (Some("Espèces"), Some("2026-11-06"))
+        );
+        assert!(envoyes[1].get("reference_no").is_none());
         assert_eq!(faux.reponses_restantes(), 0);
     }
 
     #[test]
-    fn modele_modifie_depuis_la_generation() {
+    fn rien_cree_si_une_ligne_de_paiement_bloque() {
+        let referentiel = referentiel();
+        let mut tableau = lire_octets(
+            &generer_modele(
+                Cas::Paiements,
+                &referentiel,
+                &ContexteModele { url_dokos: String::new(), date: "2026-11-05".into(), societe: None },
+            )
+            .expect("modèle"),
+            "xlsx",
+        )
+        .expect("lecture");
+        // Compte bancaire sans référence, et mode inconnu.
+        tableau.lignes = vec![
+            (3, vec!["ACC-SINV-1".into(), "05/11/2026".into(), String::new(), "Virement".into(), String::new()]),
+            (4, vec!["ACC-SINV-2".into(), "05/11/2026".into(), String::new(), "Troc".into(), String::new()]),
+        ];
         let faux = FauxTransport::new();
+        compte(&faux, "Bank");
         let dokos = Dokos::new(&faux);
-        let tableau = Tableau {
-            marque: Some(Marque {
-                cas: Cas::FacturesModele,
-                version: VERSION_MODELE,
-                dokos: String::new(),
-                modele: Some("ACC-SINV-0007".into()),
-                modele_modifie: Some("2026-10-01 09:00:00".into()),
-            }),
-            ..Tableau::default()
-        };
-        clients(&faux);
-        modele(&faux, "2026-11-04 17:30:00");
-        let erreur = referentiel_pour_fichier(&dokos, Cas::FacturesModele, &tableau).expect_err("modifié");
-        assert!(matches!(erreur, ErreurImport::Modele(m) if m.contains("modifié")));
-
-        // Génération sans modèle choisi : refusée avant de lire le modèle.
-        let faux = FauxTransport::new();
-        clients(&faux);
-        let erreur = referentiel_pour_generer(&Dokos::new(&faux), Cas::FacturesModele, None).expect_err("sans");
-        assert!(matches!(erreur, ErreurImport::Modele(_)));
+        let analyse = analyser(&dokos, Cas::Paiements, &tableau, &referentiel, &Options::default()).expect("analyse");
+        assert!(matches!(&analyse.lignes[0].statut, Statut::Invalide(m) if m.contains("référence obligatoire")));
+        assert!(matches!(&analyse.lignes[1].statut, Statut::Introuvable { champ, .. } if champ == "Mode de paiement"));
+        let erreur =
+            creer(&dokos, &analyse, &OptionsCreation { seulement_prets: false, si_doublon: SiDoublon::Reutiliser })
+                .expect_err("bloqué");
+        assert_eq!(erreur, ErreurImport::LignesBloquantes(2));
+        assert!(faux.requetes().iter().all(|r| r.methode != Methode::Post || r.chemin.contains("/api/method/")));
     }
 }

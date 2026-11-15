@@ -24,16 +24,9 @@ pub struct ContexteModele {
     pub societe: Option<String>,
 }
 
-/// Nom de fichier conseillé pour le modèle d'un cas (et du modèle Dokos copié, s'il y en a un).
-pub fn nom_fichier_modele(cas: Cas, referentiel: &Referentiel) -> String {
-    match &referentiel.modele {
-        Some(m) => format!("modele-{}-{}.xlsx", cas.nom(), nom_simple(&m.id)),
-        None => format!("modele-{}.xlsx", cas.nom()),
-    }
-}
-
-fn nom_simple(texte: &str) -> String {
-    texte.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' }).collect()
+/// Nom de fichier conseillé pour le modèle d'un cas.
+pub fn nom_fichier_modele(cas: Cas) -> String {
+    format!("modele-{}.xlsx", cas.nom())
 }
 
 /// Classeur modèle, en mémoire.
@@ -42,8 +35,8 @@ pub fn generer_modele(cas: Cas, referentiel: &Referentiel, contexte: &ContexteMo
 }
 
 fn construire(cas: Cas, referentiel: &Referentiel, contexte: &ContexteModele) -> Result<Vec<u8>, XlsxError> {
-    let colonnes = cas.colonnes(referentiel);
-    let exemple = cas.exemple(referentiel);
+    let colonnes = cas.colonnes();
+    let exemple = cas.exemple();
     let mut classeur = Workbook::new();
     classeur.set_properties(
         &DocProperties::new()
@@ -57,12 +50,12 @@ fn construire(cas: Cas, referentiel: &Referentiel, contexte: &ContexteModele) ->
             )),
     );
 
-    mode_emploi(classeur.add_worksheet(), cas, &colonnes, referentiel, contexte)?;
+    mode_emploi(classeur.add_worksheet(), cas, &colonnes, contexte)?;
     let positions = listes(&mut classeur, referentiel)?;
     // L'onglet Données est ajouté après Listes pour que les validations y fassent référence,
     // puis placé en premier onglet actif.
     donnees(classeur.add_worksheet(), cas, &colonnes, &exemple, &positions)?;
-    marque(classeur.add_worksheet(), cas, referentiel, contexte)?;
+    marque(classeur.add_worksheet(), cas, contexte)?;
 
     // Ordre d'affichage : Mode d'emploi, Données, Listes.
     let feuilles = classeur.worksheets_mut();
@@ -77,7 +70,6 @@ fn mode_emploi(
     feuille: &mut Worksheet,
     cas: Cas,
     colonnes: &[Colonne],
-    referentiel: &Referentiel,
     contexte: &ContexteModele,
 ) -> Result<(), XlsxError> {
     feuille.set_name(ONGLET_MODE_EMPLOI)?;
@@ -100,21 +92,6 @@ fn mode_emploi(
         &texte,
     )?;
     ligne += 1;
-    if let Some(modele) = &referentiel.modele {
-        feuille.write_string_with_format(
-            ligne,
-            0,
-            format!(
-                "Modèle Dokos copié : « {} » ({}), modifié le {} — {} ligne(s) d'articles.",
-                modele.titre,
-                modele.id,
-                modele.modifie.get(..16).unwrap_or(&modele.modifie),
-                modele.lignes.len()
-            ),
-            &gras,
-        )?;
-        ligne += 1;
-    }
     ligne += 1;
     let paragraphes = [
         format!("Résultat : {}.", cas.resultat()),
@@ -244,24 +221,15 @@ fn donnees(
     Ok(())
 }
 
-fn marque(
-    feuille: &mut Worksheet,
-    cas: Cas,
-    referentiel: &Referentiel,
-    contexte: &ContexteModele,
-) -> Result<(), XlsxError> {
+fn marque(feuille: &mut Worksheet, cas: Cas, contexte: &ContexteModele) -> Result<(), XlsxError> {
     feuille.set_name(ONGLET_MARQUE)?;
-    let mut lignes = vec![
+    let lignes = [
         ("signature", "dokos-asso".to_owned()),
         ("cas", cas.nom().to_owned()),
         ("version", VERSION_MODELE.to_string()),
         ("genere", contexte.date.clone()),
         ("dokos", contexte.url_dokos.clone()),
     ];
-    if let Some(modele) = &referentiel.modele {
-        lignes.push(("modele", modele.id.clone()));
-        lignes.push(("modele_modifie", modele.modifie.clone()));
-    }
     for (i, (cle, valeur)) in lignes.iter().enumerate() {
         feuille.write_string(i as u32, 0, *cle)?;
         feuille.write_string(i as u32, 1, valeur)?;
@@ -317,18 +285,19 @@ mod tests {
             assert_eq!(marque.cas, cas);
             assert_eq!(marque.version, VERSION_MODELE);
             assert_eq!(marque.dokos, "https://dokos.exemple.fr");
-            let colonnes = cas.colonnes(&referentiel);
+            let colonnes = cas.colonnes();
             assert_eq!(tableau.entetes.len(), colonnes.len(), "{cas}");
             assert_eq!(tableau.entetes[0], colonnes[0].entete());
             // La ligne d'exemple est lue puis retirée.
             assert_eq!(tableau.lignes.len(), 1, "{cas}");
-            let sans = tableau.sans_exemple(&cas.exemple(&referentiel));
+            let sans = tableau.sans_exemple(&cas.exemple());
             assert!(sans.lignes.is_empty(), "{cas}");
         }
     }
 
     #[test]
     fn nom_du_fichier() {
-        assert_eq!(nom_fichier_modele(Cas::Clients, &Referentiel::default()), "modele-clients.xlsx");
+        assert_eq!(nom_fichier_modele(Cas::Clients), "modele-clients.xlsx");
+        assert_eq!(nom_fichier_modele(Cas::Paiements), "modele-paiements.xlsx");
     }
 }

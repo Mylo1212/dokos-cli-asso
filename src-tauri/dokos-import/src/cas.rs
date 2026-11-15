@@ -2,48 +2,38 @@
 
 use std::fmt;
 
-use dokos_core::vente::TypeVente;
-
 use crate::referentiel::{
-    LISTE_ARTICLES, LISTE_CLIENTS, LISTE_GROUPES_ARTICLES, LISTE_GROUPES_CLIENTS, LISTE_TERRITOIRES, LISTE_UNITES,
-    Referentiel,
+    LISTE_ARTICLES, LISTE_CLIENTS, LISTE_FACTURES, LISTE_GROUPES_ARTICLES, LISTE_GROUPES_CLIENTS, LISTE_MODES_PAIEMENT,
+    LISTE_TERRITOIRES, LISTE_UNITES,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Cas {
     /// Factures saisies ligne par ligne, prix facultatif.
     Factures,
-    /// Copies d'une facture « Template » de Dokos.
-    FacturesModele,
+    /// Écritures de paiement (brouillons) en règlement de factures validées.
+    Paiements,
     Articles,
     Clients,
 }
 
 impl Cas {
-    pub const TOUS: [Cas; 4] = [Cas::Factures, Cas::FacturesModele, Cas::Articles, Cas::Clients];
+    pub const TOUS: [Cas; 4] = [Cas::Factures, Cas::Paiements, Cas::Articles, Cas::Clients];
 
     /// Nom technique, stable (ligne de commande, marque du modèle).
     pub fn nom(self) -> &'static str {
         match self {
             Self::Factures => "factures",
-            Self::FacturesModele => "factures-modele",
+            Self::Paiements => "paiements",
             Self::Articles => "articles",
             Self::Clients => "clients",
-        }
-    }
-
-    /// Type de vente d'un cas « à partir d'un modèle ».
-    pub fn type_modele(self) -> Option<TypeVente> {
-        match self {
-            Self::FacturesModele => Some(TypeVente::Facture),
-            _ => None,
         }
     }
 
     pub fn libelle(self) -> &'static str {
         match self {
             Self::Factures => "Factures",
-            Self::FacturesModele => "Factures à partir d'un modèle",
+            Self::Paiements => "Paiements",
             Self::Articles => "Articles",
             Self::Clients => "Clients",
         }
@@ -53,8 +43,8 @@ impl Cas {
     pub fn resultat(self) -> &'static str {
         match self {
             Self::Factures => "factures en brouillon, prix de Dokos ou saisis, taxes calculées par Dokos",
-            Self::FacturesModele => {
-                "factures en brouillon, copies du modèle choisi (prix, taxes et conditions du modèle)"
+            Self::Paiements => {
+                "écritures de paiement en brouillon, rattachées à la facture réglée (à valider dans Dokos)"
             }
             Self::Articles => "articles désactivés, à activer depuis le catalogue",
             Self::Clients => "fiches client (contacts et adresses restent à saisir dans Dokos)",
@@ -74,7 +64,7 @@ impl Cas {
         }
     }
 
-    pub fn colonnes(self, referentiel: &Referentiel) -> Vec<Colonne> {
+    pub fn colonnes(self) -> Vec<Colonne> {
         let c = Colonne::new;
         let lot = c(
             "Lot",
@@ -141,51 +131,40 @@ impl Cas {
                 c("E-mail", false, Genre::Texte, ""),
                 c("Téléphone", false, Genre::Texte, ""),
             ],
-            Self::FacturesModele => {
-                let mut colonnes = vec![
-                    client,
-                    c("Date d'arrivée", true, Genre::Date, "Reportée dans « custom_date_arrivee ». JJ/MM/AAAA."),
-                    c(
-                        "Date de départ",
-                        true,
-                        Genre::Date,
-                        "Reportée dans « custom_date_depart » ; c'est aussi la date de livraison d'une commande.",
-                    ),
-                ];
-                if let Some(modele) = &referentiel.modele {
-                    let designations: Vec<String> = modele.lignes.iter().map(|l| l.designation()).collect();
-                    for ligne in &modele.lignes {
-                        let designation = ligne.designation();
-                        // Un même article sur plusieurs lignes : la ligne départage les colonnes.
-                        let nom = if designations.iter().filter(|d| **d == designation).count() > 1 {
-                            format!("Qté {designation} — ligne {}", ligne.index + 1)
-                        } else {
-                            format!("Qté {designation}")
-                        };
-                        colonnes.push(
-                            Colonne::new(
-                                &nom,
-                                false,
-                                Genre::Nombre,
-                                &format!(
-                                    "Quantité ; vide ou 0 : article retiré. Dans le modèle : {} {} à {:.2} {}.",
-                                    nombre_lisible(ligne.quantite),
-                                    ligne.unite,
-                                    ligne.prix,
-                                    modele.devise
-                                ),
-                            )
-                            .champ(&ligne.index.to_string()),
-                        );
-                    }
-                }
-                colonnes
-            }
+            Self::Paiements => vec![
+                c(
+                    "Facture",
+                    true,
+                    Genre::Texte,
+                    "Numéro Dokos d'une facture validée dont le solde n'est pas nul, voir la feuille Listes.",
+                )
+                .liste(LISTE_FACTURES),
+                c("Date du paiement", true, Genre::Date, "Date d'encaissement au format JJ/MM/AAAA ou AAAA-MM-JJ."),
+                c(
+                    "Montant",
+                    false,
+                    Genre::Nombre,
+                    "Facultatif : montant encaissé. Vide : tout le reste dû de la facture. Jamais plus que le reste dû.",
+                ),
+                c(
+                    "Mode de paiement",
+                    true,
+                    Genre::Texte,
+                    "Mode de paiement actif de Dokos, voir la feuille Listes. Il détermine le compte d'encaissement.",
+                )
+                .liste(LISTE_MODES_PAIEMENT),
+                c(
+                    "Référence",
+                    false,
+                    Genre::Texte,
+                    "Numéro de chèque, de virement… Obligatoire si le mode de paiement encaisse sur un compte bancaire.",
+                ),
+            ],
         }
     }
 
     /// Ligne d'exemple du modèle, dans l'ordre des colonnes. Ignorée à l'import.
-    pub fn exemple(self, referentiel: &Referentiel) -> Vec<String> {
+    pub fn exemple(self) -> Vec<String> {
         let v = |s: &str| s.to_owned();
         match self {
             Self::Factures => vec![
@@ -210,12 +189,8 @@ impl Cas {
             Self::Clients => {
                 vec![v("Mairie de Crest"), v("Organisation"), v(""), v(""), v("mairie@crest.fr"), v("04 75 00 00 00")]
             }
-            Self::FacturesModele => {
-                let mut exemple = vec![v("Mairie de Crest"), v("01/12/2026"), v("03/12/2026")];
-                if let Some(modele) = &referentiel.modele {
-                    exemple.extend(modele.lignes.iter().map(|l| nombre_lisible(l.quantite)));
-                }
-                exemple
+            Self::Paiements => {
+                vec![v("ACC-SINV-2026-00012"), v("05/11/2026"), v(""), v("Virement"), v("VIR-2026-118")]
             }
         }
     }
@@ -232,8 +207,8 @@ impl Cas {
             Self::Clients => {
                 "Une ligne par client. Un client de même nom n'est pas recréé. Les contacts et adresses détaillés se saisissent ensuite dans Dokos."
             }
-            Self::FacturesModele => {
-                "Une ligne par document. Chaque document est une copie du modèle choisi à la génération de ce fichier : prix, remises, taxes, conditions de paiement, conditions générales et champs du modèle sont repris tels quels. Seuls le client, les dates d'arrivée et de départ et les quantités sont lus dans le fichier. Une quantité vide ou à 0 retire l'article ; une ligne sans aucune quantité est refusée. La date de la facture est celle du jour de l'import. Si le modèle est modifié dans Dokos, régénérez ce fichier."
+            Self::Paiements => {
+                "Une ligne par paiement reçu, en règlement d'une facture déjà validée dans Dokos. Dokos prépare l'écriture de paiement (client, comptes, lien vers la facture) ; le fichier donne la date, le montant, le mode de paiement et la référence. Le montant vide règle tout le reste dû ; plusieurs lignes pour une même facture (règlement en plusieurs fois) ne peuvent pas dépasser ensemble son reste dû. La référence est obligatoire quand le mode de paiement encaisse sur un compte bancaire. Chaque paiement est créé en brouillon : la facture n'est soldée qu'une fois le paiement validé dans Dokos, après relecture. Le journal comptable est attribué par Dokos selon ses règles."
             }
         }
     }
@@ -242,11 +217,6 @@ impl Cas {
         let nom = nom.trim().to_lowercase();
         Self::TOUS.into_iter().find(|c| c.nom() == nom || c.libelle().to_lowercase() == nom)
     }
-}
-
-/// `25` plutôt que `25.0`.
-pub fn nombre_lisible(n: f64) -> String {
-    if n.fract() == 0.0 && n.abs() < 1e15 { format!("{}", n as i64) } else { n.to_string() }
 }
 
 impl fmt::Display for Cas {
@@ -271,22 +241,15 @@ pub struct Colonne {
     pub aide: String,
     /// Nom de la liste de la feuille Listes du classeur qui alimente la liste déroulante.
     pub liste: Option<&'static str>,
-    /// Nom technique associé (question du formulaire), s'il y en a un.
-    pub champ: Option<String>,
 }
 
 impl Colonne {
     pub fn new(nom: &str, obligatoire: bool, genre: Genre, aide: &str) -> Self {
-        Self { nom: nom.to_owned(), obligatoire, genre, aide: aide.to_owned(), liste: None, champ: None }
+        Self { nom: nom.to_owned(), obligatoire, genre, aide: aide.to_owned(), liste: None }
     }
 
     fn liste(mut self, liste: &'static str) -> Self {
         self.liste = Some(liste);
-        self
-    }
-
-    fn champ(mut self, champ: &str) -> Self {
-        self.champ = Some(champ.to_owned());
         self
     }
 
@@ -302,15 +265,16 @@ mod tests {
 
     #[test]
     fn colonnes_et_exemples_alignes() {
-        let referentiel = Referentiel::default();
         for cas in Cas::TOUS {
-            let colonnes = cas.colonnes(&referentiel);
-            assert_eq!(colonnes.len(), cas.exemple(&referentiel).len(), "{cas}");
+            let colonnes = cas.colonnes();
+            assert_eq!(colonnes.len(), cas.exemple().len(), "{cas}");
             assert!(colonnes.iter().any(|c| c.obligatoire), "{cas}");
             assert_eq!(Cas::depuis_nom(cas.nom()), Some(cas));
             assert_eq!(Cas::depuis_nom(&cas.libelle().to_uppercase()), Some(cas));
         }
         assert_eq!(Cas::depuis_nom("avoirs"), None);
         assert_eq!(Cas::depuis_nom("devis"), None);
+        assert_eq!(Cas::depuis_nom("factures-modele"), None, "cas retiré");
+        assert_eq!(Cas::depuis_nom("Paiements"), Some(Cas::Paiements));
     }
 }

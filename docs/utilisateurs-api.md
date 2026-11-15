@@ -20,9 +20,15 @@ nécessaire.
 | Item Price, Selling Settings, UOM | oui | | | prix indicatif, unités |
 | Customer Group, Territory | oui | | | listes du modèle Clients, filtres de l'export |
 | Quotation, Sales Order, Sales Invoice | oui | oui | | brouillons, doublons, transformation, brouillons en attente, factures en retard |
+| Payment Entry | oui | oui (import Paiements) | | écritures de paiement en brouillon, doublons |
+| Mode of Payment, Account | oui | | | modes de paiement actifs, compte d'encaissement et son type |
 
 Les méthodes `make_sales_order` et `make_sales_invoice` (Commander, Facturer)
 demandent la lecture du document source validé et la création de la cible.
+Celles de l'import Paiements, `get_payment_entry` (prépare l'écriture, sans
+l'enregistrer) et `get_bank_cash_account` (compte d'un mode de paiement),
+demandent la lecture de la facture et du mode de paiement. Le journal comptable
+du paiement est attribué par Dokos : aucun droit sur « Accounting Journal ».
 (Rôle standard proche : *Sales User*, sans « Soumettre ».)
 
 ## Profil `evenements`
