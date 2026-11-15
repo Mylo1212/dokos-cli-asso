@@ -70,7 +70,7 @@ impl Cas {
             "Lot",
             false,
             Genre::Texte,
-            "Même valeur sur toutes les lignes d'un même document. Vide : une ligne = un document.",
+            "Facultatif. Même valeur sur toutes les lignes d'une même facture, même éloignées. Vide : les lignes qui se suivent avec le même client, la même date et la même échéance forment une seule facture ; mettez un lot pour séparer deux factures du même client à la même date.",
         );
         let client = c(
             "Client",
@@ -199,7 +199,7 @@ impl Cas {
     pub fn consignes(self) -> &'static str {
         match self {
             Self::Factures => {
-                "Une ligne par article. Les lignes qui partagent le même Lot forment un seul document : le client et les dates sont lus sur la première ligne du lot et doivent être identiques sur les autres. Le prix unitaire HT est facultatif : laissé vide, Dokos applique ses listes de prix ; les taxes sont toujours calculées par Dokos. « Tarif du client » à Oui enregistre en plus ce prix dans la liste de prix de Dokos, pour cet article et ce client : c'est la seule écriture de l'import qui ne soit pas un brouillon. Chaque document est créé en brouillon, à relire et valider dans Dokos."
+                "Une ligne par article ; une facture peut avoir autant d'articles que de lignes. Sans Lot, les lignes qui se suivent avec le même client, la même date de facture et la même échéance (et la même Référence, si elle est renseignée) forment une seule facture. Avec un Lot, les lignes qui le partagent forment une seule facture, même éloignées : le client et les dates sont lus sur la première ligne du lot et doivent être identiques sur les autres. Pour deux factures du même client à la même date, indiquez deux Lots différents. Le prix unitaire HT est facultatif : laissé vide, Dokos applique ses listes de prix ; les taxes sont toujours calculées par Dokos. « Tarif du client » à Oui enregistre en plus ce prix dans la liste de prix de Dokos, pour cet article et ce client : c'est la seule écriture de l'import qui ne soit pas un brouillon. Chaque document est créé en brouillon, à relire et valider dans Dokos."
             }
             Self::Articles => {
                 "Une ligne par article. Les articles sont créés désactivés : vous les activez depuis le catalogue de l'appli ou dans Dokos après relecture. Un code ou un libellé déjà présent n'est pas recréé."

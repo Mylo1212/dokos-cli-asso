@@ -540,7 +540,12 @@ fn arrondi(montant: f64) -> f64 {
     (montant * 100.0).round() / 100.0
 }
 
-/// Factures : les lignes d'un même lot forment un document.
+/// Factures : une ligne par article, regroupées en documents.
+///
+/// - Lot renseigné : les lignes de même lot forment un document, où qu'elles soient.
+/// - Lot vide : la ligne rejoint le document de la ligne précédente si celle-ci
+///   était aussi sans lot et si le client, la date de facture et l'échéance sont
+///   les mêmes et la référence vide ou identique ; sinon elle ouvre un document.
 fn analyser_factures<T: Transport>(
     analyse: &mut Analyse,
     colonnes: &Colonnes,
@@ -562,17 +567,37 @@ fn analyser_factures<T: Transport>(
     }
     let mut lots: BTreeMap<String, Lot> = BTreeMap::new();
     let mut ordre: Vec<String> = Vec::new();
+    // Document sans lot en cours : les lignes suivantes sans lot le complètent tant qu'elles lui correspondent.
+    let mut en_cours: Option<String> = None;
 
     for i in 0..analyse.lignes.len() {
         let valeurs = analyse.lignes[i].valeurs.clone();
         let numero = analyse.lignes[i].numero;
         let v = |c: usize| colonnes.valeur(&valeurs, c).to_owned();
         let lot_texte = v(0);
-        let cle = if lot_texte.is_empty() { format!("ligne {numero}") } else { normaliser(&lot_texte) };
         let client_texte = v(1);
         let date_texte = v(2);
         let echeance_texte = v(col_echeance);
         let reference_texte = v(col_reference);
+        let cle = if lot_texte.is_empty() {
+            let rejoint = en_cours
+                .as_ref()
+                .filter(|k| {
+                    lots.get(*k).is_some_and(|lot| {
+                        normaliser(&client_texte) == normaliser(&lot.client)
+                            && date_texte == lot.date
+                            && echeance_texte == lot.echeance
+                            && (reference_texte.is_empty() || reference_texte == lot.reference)
+                    })
+                })
+                .cloned();
+            let cle = rejoint.unwrap_or_else(|| format!("ligne {numero}"));
+            en_cours = Some(cle.clone());
+            cle
+        } else {
+            en_cours = None;
+            normaliser(&lot_texte)
+        };
 
         let document = match lots.get(&cle) {
             Some(lot) => lot.document,
@@ -825,7 +850,8 @@ pub fn creer<T: Transport>(
                     ),
                 ),
                 CreationPaiement::DejaExistant(e) => {
-                    (false, e.id, format!("paiement identique déjà dans Dokos ({})", e.statut()))
+                    let message = format!("paiement identique déjà dans Dokos ({})", e.statut());
+                    (false, e.id, message)
                 }
             }),
             Prepare::Article(a) => creer_article(dokos, a, options.si_doublon).map(|c| match c {
@@ -935,6 +961,48 @@ mod tests {
     }
 
     #[test]
+    fn factures_regroupees_sans_lot() {
+        let csv = "Lot;Client;Date de facture;Échéance;Article;Quantité;Référence\n\
+                   ;CCAS;31/10/2026;;REPAS;10;\n\
+                   ;ccas;31/10/2026;;SALLE;1;\n\
+                   ;CCAS;31/10/2026;;REPAS;2;\n\
+                   ;CCAS;01/11/2026;;REPAS;3;\n\
+                   ;CCAS;01/11/2026;;REPAS;4;Bon 7\n\
+                   ;CCAS;01/11/2026;;SALLE;1;Bon 7\n\
+                   ;CCAS;01/11/2026;;SALLE;1;Bon 8\n\
+                   X;CCAS;01/11/2026;;REPAS;5;\n\
+                   ;CCAS;01/11/2026;;REPAS;6;\n\
+                   X;CCAS;01/11/2026;;SALLE;1;\n";
+        let tableau = lire_csv(csv).expect("csv");
+        let faux = FauxTransport::new();
+        let mut referentiel = Referentiel::default();
+        referentiel.ajouter(LISTE_CLIENTS, vec![("CUST-3".into(), "CCAS".into())]);
+        referentiel.ajouter(
+            LISTE_ARTICLES,
+            vec![("REPAS".into(), "Repas — Unité".into()), ("SALLE".into(), "Salle — Jour".into())],
+        );
+        let analyse = analyser(&Dokos::new(&faux), Cas::Factures, &tableau, &referentiel, &options()).expect("analyse");
+        let groupes: Vec<&[usize]> = analyse.documents.iter().map(|d| d.lignes.as_slice()).collect();
+        assert_eq!(
+            groupes,
+            [
+                &[0, 1, 2][..], // même client (casse ignorée), même date : une seule facture
+                &[3],           // autre date
+                &[4, 5],        // même référence
+                &[6],           // autre référence
+                &[7, 9],        // lot X, même interrompu par une ligne sans lot
+                &[8],           // la ligne sans lot, entre deux lignes du lot X
+            ]
+        );
+        assert_eq!(analyse.documents_prets(), 6);
+        assert_eq!(analyse.lignes_bloquantes(), 0);
+        assert!(analyse.documents[0].libelle.contains("(3 lignes)"), "{}", analyse.documents[0].libelle);
+        let Some(Prepare::Vente(v)) = &analyse.documents[0].prepare else { panic!() };
+        assert_eq!(v.corps()["items"].as_array().map(Vec::len), Some(3));
+        assert!(faux.requetes().is_empty(), "clients et articles viennent de la liste du modèle");
+    }
+
+    #[test]
     fn client_de_la_liste_du_modele_toujours_reconnu() {
         // Nom à espace doublé et à espace insécable : la recherche « contient » de
         // Dokos ne le retrouverait pas. Il est dans la liste du modèle : aucune requête.
@@ -964,9 +1032,9 @@ mod tests {
     #[test]
     fn prix_unitaire_facultatif() {
         let csv = "Lot;Client;Date de facture;Échéance;Article;Quantité;Prix unitaire HT;Référence\n\
-                   ;CCAS;31/10/2026;;REPAS;10;12,50;\n\
-                   ;CCAS;31/10/2026;;REPAS;10;;\n\
-                   ;CCAS;31/10/2026;;REPAS;10;-3;\n";
+                   A;CCAS;31/10/2026;;REPAS;10;12,50;\n\
+                   B;CCAS;31/10/2026;;REPAS;10;;\n\
+                   C;CCAS;31/10/2026;;REPAS;10;-3;\n";
         let tableau = lire_csv(csv).expect("csv");
         let faux = FauxTransport::new();
         reponse_articles(&faux, &[("REPAS", "Repas")]);
@@ -1022,8 +1090,8 @@ mod tests {
     #[test]
     fn tarif_du_client_enregistre_a_la_creation() {
         let csv = "Lot;Client;Date de facture;Échéance;Article;Quantité;Prix unitaire HT;Tarif du client;Référence\n\
-                   ;CCAS;31/10/2026;;REPAS;10;12,50;Oui;\n\
-                   ;CCAS;31/10/2026;;REPAS;10;;oui;\n";
+                   A;CCAS;31/10/2026;;REPAS;10;12,50;Oui;\n\
+                   B;CCAS;31/10/2026;;REPAS;10;;oui;\n";
         let tableau = lire_csv(csv).expect("csv");
         let faux = FauxTransport::new();
         reponse_articles(&faux, &[("REPAS", "Repas")]);

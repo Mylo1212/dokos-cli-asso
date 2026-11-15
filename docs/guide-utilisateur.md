@@ -126,8 +126,14 @@ Quatre cas d'usage : **Factures**, **Paiements**, **Articles** et **Clients**.
    documents prêts » pour créer malgré des lignes à corriger. Un fichier
    résultat (`<nom>.resultat.xlsx`) reprend chaque ligne avec son statut.
 
-- **Factures** : une ligne par article ; les lignes qui partagent le même
-  **Lot** forment une seule facture. Les factures sont des brouillons.
+- **Factures** : une ligne par article, donc **plusieurs articles par facture**
+  en répétant la facture sur plusieurs lignes. Les lignes qui se suivent avec le
+  même client, la même date de facture et la même échéance (et la même
+  Référence, si elle est renseignée) forment **automatiquement une seule
+  facture**. La colonne facultative **Lot** sert à regrouper des lignes qui ne se
+  suivent pas (même Lot = même facture) ou à séparer deux factures du même
+  client à la même date (deux Lots différents). Les factures sont des
+  brouillons.
 - **Paiements** : une ligne par paiement reçu en règlement d'une **facture déjà
   validée** dans Dokos. Colonnes : **Facture** (liste des factures dont le solde
   n'est pas nul), **Date du paiement**, **Montant** (facultatif : vide, tout le

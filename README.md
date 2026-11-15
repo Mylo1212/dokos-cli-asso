@@ -21,7 +21,7 @@ Open WebUI : commencez par une instance de test.
 |---|---|
 | **Ventes** (Créer) | Devis, commande ou facture en brouillon. Client et articles choisis dans des listes déroulantes ; **prix unitaire HT facultatif** par ligne (vide : prix de Dokos). Ou « À partir d'un modèle » : copie d'un document étiqueté « Template ». Catalogue des groupes d'articles. |
 | **Formulaires** (Créer) | Un événement et son formulaire d'inscription, créés non publiés, puis publiés d'un clic séparé. |
-| **Import** | Un modèle Excel généré depuis votre Dokos, analysé ligne par ligne, création tout ou rien : **Factures**, **Paiements** (écritures de paiement en brouillon, en règlement de factures validées), **Articles**, **Clients**. |
+| **Import** | Un modèle Excel généré depuis votre Dokos, analysé ligne par ligne, création tout ou rien : **Factures** (plusieurs articles par facture, regroupés automatiquement), **Paiements** (écritures de paiement en brouillon, en règlement de factures validées), **Articles**, **Clients**. |
 | **Export** | Clients, articles, devis, commandes, factures ou employés dans un fichier Excel, avec filtres (client, groupe, territoire, période, statut, nom) en listes déroulantes. **Grand livre** d'un journal comptable et d'une période, directement au format d'import (colonnes DATE à REFINTERNE), avec le journal du fichier au choix : **VEN** ou **REC**. Lecture seule. |
 | **Suivi** | Mes brouillons (et « Commander » / « Facturer »), inscrits d'un événement, factures en retard. Lecture seule, sauf la transformation qui crée un brouillon. |
 | **Accueil**, **Réglages**, **Assistant** | Tableau de bord ; adresse de Dokos et clés API ; chatbot Open WebUI qui qualifie la demande et pré-remplit Ventes, Formulaires ou Export. |

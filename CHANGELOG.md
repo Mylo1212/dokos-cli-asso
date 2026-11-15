@@ -23,6 +23,15 @@ construction des installateurs (voir `.github/workflows/release.yml`).
   écrit dans la colonne JOURNAL (liste « Journal du fichier » dans Export ›
   Grand livre, dernier choix retenu ; `dokos grand-livre --journal-fichier REC`).
 
+### Modifié
+
+- **Import › Factures** : les lignes qui se suivent avec le même client, la même
+  date de facture et la même échéance (et la même référence, si elle est
+  renseignée) forment automatiquement **une seule facture à plusieurs articles**,
+  sans qu'il soit nécessaire de remplir le Lot. Le Lot reste utile pour regrouper
+  des lignes éloignées ou séparer deux factures du même client à la même date.
+  Avant, deux lignes sans Lot donnaient deux factures.
+
 ### Retiré
 
 - **Import › Factures à partir d'un modèle** (et l'option `--modele` de
