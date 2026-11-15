@@ -31,6 +31,10 @@ construction des installateurs (voir `.github/workflows/release.yml`).
   sans qu'il soit nécessaire de remplir le Lot. Le Lot reste utile pour regrouper
   des lignes éloignées ou séparer deux factures du même client à la même date.
   Avant, deux lignes sans Lot donnaient deux factures.
+- **Modèles d'import** : les listes déroulantes (et Oui/Non) commencent dès la
+  ligne d'exemple, et les nombres (quantités, montants, prix) s'affichent sans
+  virgule en trop (`1` au lieu de `1,`). Les modèles déjà téléchargés ne changent
+  pas : il faut en télécharger un nouveau.
 
 ### Retiré
 

@@ -171,7 +171,6 @@ fn donnees(
     let entete = Format::new().set_bold().set_background_color(Color::RGB(0xE3EFE9)).set_locked();
     let exemple_format = Format::new().set_italic().set_font_color(Color::RGB(0x7A7A7A));
     let date = Format::new().set_num_format("dd/mm/yyyy");
-    let nombre = Format::new().set_num_format("0.##");
     for (i, colonne) in colonnes.iter().enumerate() {
         let c = i as u16;
         feuille.write_string_with_format(0, c, colonne.entete(), &entete)?;
@@ -180,11 +179,10 @@ fn donnees(
             Genre::Nombre | Genre::OuiNon => 11,
             Genre::Texte => (colonne.nom.chars().count() as f64 + 10.0).clamp(14.0, 34.0) as u16,
         };
-        match colonne.genre {
-            Genre::Date => feuille.set_column_format(c, &date)?,
-            Genre::Nombre => feuille.set_column_format(c, &nombre)?,
-            Genre::Texte | Genre::OuiNon => feuille,
-        };
+        // Nombres : format « Standard » d'Excel (`1`, `12,5`), pas de séparateur décimal en trop.
+        if colonne.genre == Genre::Date {
+            feuille.set_column_format(c, &date)?;
+        }
         feuille.set_column_width(c, f64::from(largeur))?;
         if !colonne.aide.is_empty() {
             let note = Note::new(colonne.aide.as_str()).set_author("Dokos Asso").add_author_prefix(false);
@@ -214,7 +212,8 @@ fn donnees(
             },
         };
         if let Some(validation) = validation {
-            feuille.add_data_validation(2, c, LIGNES_PREPAREES, c, &validation)?;
+            // Dès la ligne d'exemple (ligne 2 du classeur), pour qu'elle montre aussi la liste.
+            feuille.add_data_validation(1, c, LIGNES_PREPAREES, c, &validation)?;
         }
     }
     let _ = cas;
