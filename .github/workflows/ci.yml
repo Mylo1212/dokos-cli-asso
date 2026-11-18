@@ -80,4 +80,6 @@ jobs:
       - run: cargo audit
         working-directory: src-tauri
       - run: npm ci
-      - run: npm audit --audit-level=high
+      # Dépendances de l'appli seulement : les outils de développement (Vite,
+      # Vitest…) ne sont pas livrés et peuvent attendre un correctif amont.
+      - run: npm audit --omit=dev --audit-level=high

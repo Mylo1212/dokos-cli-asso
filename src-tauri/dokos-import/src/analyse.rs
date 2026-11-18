@@ -511,7 +511,7 @@ fn analyser_paiements<T: Transport>(
                 && (client.is_empty() || g.client.is_empty() || client == g.client)
         };
         let cle = if lot_texte.is_empty() {
-            let rejoint = en_cours.as_ref().filter(|k| groupes.get(*k).is_some_and(|g| compatible(g))).cloned();
+            let rejoint = en_cours.as_ref().filter(|k| groupes.get(*k).is_some_and(&compatible)).cloned();
             let cle = rejoint.unwrap_or_else(|| format!("ligne {numero}"));
             en_cours = Some(cle.clone());
             cle
