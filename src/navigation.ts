@@ -25,18 +25,10 @@ export interface Section {
 export const SECTIONS: Section[] = [
   { id: "accueil", libelle: "Accueil", icone: "accueil", groupe: "", touche: "1", profils: [] },
   { id: "ventes", libelle: "Ventes", icone: "ventes", groupe: "Créer", touche: "2", profils: ["ventes"] },
-  {
-    id: "formulaires",
-    libelle: "Formulaires",
-    icone: "formulaires",
-    groupe: "Créer",
-    touche: "3",
-    profils: ["evenements"],
-  },
-  { id: "import", libelle: "Import", icone: "import", groupe: "En nombre", touche: "4", profils: [] },
-  { id: "export", libelle: "Export", icone: "export", groupe: "En nombre", touche: "5", profils: [] },
-  { id: "suivi", libelle: "Suivi", icone: "suivi", groupe: "Suivre", touche: "6", profils: [] },
-  { id: "reglages", libelle: "Réglages", icone: "reglages", groupe: "pied", touche: "7", profils: [] },
+  { id: "import", libelle: "Import", icone: "import", groupe: "En nombre", touche: "3", profils: [] },
+  { id: "export", libelle: "Export", icone: "export", groupe: "En nombre", touche: "4", profils: [] },
+  { id: "suivi", libelle: "Suivi", icone: "suivi", groupe: "Suivre", touche: "5", profils: [] },
+  { id: "reglages", libelle: "Réglages", icone: "reglages", groupe: "pied", touche: "6", profils: [] },
 ];
 
 export function libelleSection(onglet: Onglet): string {
@@ -186,7 +178,7 @@ export function creerMenu(
   // --- Brouillons en attente, sur « Suivi » ---
   donnees.brouillons.abonner(() => {
     const v = donnees.brouillons.etat().valeur;
-    const nombre = v ? v.ventes.length + v.evenements.length : 0;
+    const nombre = v ? v.ventes.length : 0;
     pastilleSuivi.hidden = nombre === 0;
     pastilleSuivi.textContent = String(nombre);
     pastilleSuivi.title = `${pluriel(nombre, "brouillon")} en attente de validation dans Dokos`;

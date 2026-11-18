@@ -4,8 +4,6 @@ use dokos_config::ErreurConfig;
 use dokos_core::DokosError;
 use dokos_core::article::ErreurArticle;
 use dokos_core::date::ErreurDate;
-use dokos_core::evenement::ErreurEvenement;
-use dokos_core::formulaire::ErreurFormulaire;
 use dokos_core::vente::ErreurVente;
 use dokos_import::ErreurImport;
 
@@ -64,4 +62,4 @@ macro_rules! erreur_de_saisie {
     )*};
 }
 
-erreur_de_saisie!(ErreurVente, ErreurDate, ErreurEvenement, ErreurFormulaire, ErreurArticle);
+erreur_de_saisie!(ErreurVente, ErreurDate, ErreurArticle);

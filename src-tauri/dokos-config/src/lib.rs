@@ -35,8 +35,6 @@ const DELAI_IA: Duration = Duration::from_secs(180);
 pub enum Profil {
     /// Clients, articles, devis, commandes, factures.
     Ventes,
-    /// Événements et formulaires web (rôle Website Manager).
-    Evenements,
     /// Export des employés, en lecture seule (rôle HR User ou lecture d'« Employee »).
     Rh,
     /// Grand livre : lecture des écritures comptables et des journaux.
@@ -44,12 +42,11 @@ pub enum Profil {
 }
 
 impl Profil {
-    pub const TOUS: [Profil; 4] = [Profil::Ventes, Profil::Evenements, Profil::Rh, Profil::Compta];
+    pub const TOUS: [Profil; 3] = [Profil::Ventes, Profil::Rh, Profil::Compta];
 
     pub fn nom(self) -> &'static str {
         match self {
             Self::Ventes => "ventes",
-            Self::Evenements => "evenements",
             Self::Rh => "rh",
             Self::Compta => "compta",
         }
@@ -58,7 +55,6 @@ impl Profil {
     pub fn libelle(self) -> &'static str {
         match self {
             Self::Ventes => "Ventes",
-            Self::Evenements => "Événements",
             Self::Rh => "RH",
             Self::Compta => "Comptabilité",
         }
@@ -70,7 +66,6 @@ impl Profil {
             Self::Ventes => {
                 "lecture clients et articles, lecture et création de devis, commandes et factures, sans validation"
             }
-            Self::Evenements => "Website Manager et création d'événements",
             Self::Rh => "HR User",
             Self::Compta => {
                 "lecture seule de GL Entry, Accounting Journal et Account (Accounts User sans « Soumettre »)"
@@ -91,10 +86,9 @@ impl std::str::FromStr for Profil {
     fn from_str(texte: &str) -> Result<Self, Self::Err> {
         match texte.trim().to_lowercase().as_str() {
             "ventes" | "vente" => Ok(Self::Ventes),
-            "evenements" | "événements" | "evenement" | "événement" => Ok(Self::Evenements),
             "rh" => Ok(Self::Rh),
             "compta" | "comptabilite" | "comptabilité" => Ok(Self::Compta),
-            autre => Err(format!("profil inconnu : « {autre} » (ventes, evenements, rh ou compta)")),
+            autre => Err(format!("profil inconnu : « {autre} » (ventes, rh ou compta)")),
         }
     }
 }
@@ -104,8 +98,10 @@ impl std::str::FromStr for Profil {
 pub struct Cles {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ventes: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub evenements: Option<String>,
+    /// Ancien profil « Événements », retiré : relu pour que les fichiers
+    /// existants restent valides, ignoré, effacé à la prochaine écriture.
+    #[serde(default, rename = "evenements", skip_serializing)]
+    _ancien_evenements: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rh: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -116,7 +112,6 @@ impl Cles {
     pub fn get(&self, profil: Profil) -> Option<&str> {
         match profil {
             Profil::Ventes => self.ventes.as_deref(),
-            Profil::Evenements => self.evenements.as_deref(),
             Profil::Rh => self.rh.as_deref(),
             Profil::Compta => self.compta.as_deref(),
         }
@@ -126,7 +121,6 @@ impl Cles {
         let cle = cle.map(|c| c.trim().to_owned()).filter(|c| !c.is_empty());
         match profil {
             Profil::Ventes => self.ventes = cle,
-            Profil::Evenements => self.evenements = cle,
             Profil::Rh => self.rh = cle,
             Profil::Compta => self.compta = cle,
         }
@@ -175,13 +169,15 @@ impl Config {
 pub struct BasesIa {
     #[serde(default)]
     pub ventes: Vec<String>,
-    #[serde(default)]
-    pub formulaires: Vec<String>,
+    /// Ancienne base de l'assistant des formulaires, retiré : relue pour que
+    /// les fichiers existants restent valides, ignorée, effacée à la prochaine écriture.
+    #[serde(default, rename = "formulaires", skip_serializing)]
+    _ancien_formulaires: Vec<String>,
 }
 
 impl Default for BasesIa {
     fn default() -> Self {
-        Self { ventes: vec!["prestations".to_owned()], formulaires: vec!["evenements".to_owned()] }
+        Self { ventes: vec!["prestations".to_owned()], _ancien_formulaires: Vec::new() }
     }
 }
 
@@ -463,14 +459,24 @@ mod tests {
         let mut cles = Cles::default();
         cles.set(Profil::Ventes, Some(" abc ".into()));
         cles.set(Profil::Rh, Some("rh123".into()));
-        cles.set(Profil::Evenements, Some("  ".into()));
+        cles.set(Profil::Compta, Some("  ".into()));
         let config =
             Config { societe: Some("Les Amanins".into()), cles, ..Config::nouvelle("https://dokos.exemple.fr", false) };
         let texte = config.en_toml().expect("toml");
-        assert!(!texte.contains("evenements = "), "{texte}");
+        assert!(!texte.contains("compta = "), "{texte}");
         assert_eq!(Config::depuis_toml(&texte).expect("relecture"), config);
         assert_eq!(config.cle(Profil::Ventes).ok(), Some("abc"));
-        assert!(matches!(config.cle(Profil::Evenements), Err(ErreurConfig::ProfilNonConfigure(Profil::Evenements))));
+        assert!(matches!(config.cle(Profil::Compta), Err(ErreurConfig::ProfilNonConfigure(Profil::Compta))));
+    }
+
+    #[test]
+    fn anciens_reglages_des_evenements_ignores() {
+        // Fichier écrit par une version qui avait le profil Événements et l'assistant des formulaires.
+        let texte = "url = \"https://d.fr\"\n[cles]\nventes = \"k\"\nevenements = \"e\"\n\n[ia.bases]\nventes = [\"p\"]\nformulaires = [\"ev\"]\n";
+        let config = Config::depuis_toml(texte).expect("toujours lisible");
+        assert_eq!(config.cle(Profil::Ventes).ok(), Some("k"));
+        let reecrit = config.en_toml().expect("toml");
+        assert!(!reecrit.contains("evenements") && !reecrit.contains("formulaires"), "{reecrit}");
     }
 
     #[test]
@@ -519,10 +525,10 @@ mod tests {
 
     #[test]
     fn profils() {
-        assert_eq!("Événements".parse::<Profil>(), Ok(Profil::Evenements));
         assert_eq!("RH".parse::<Profil>(), Ok(Profil::Rh));
         assert_eq!("Comptabilité".parse::<Profil>(), Ok(Profil::Compta));
-        assert_eq!(Profil::TOUS.len(), 4);
+        assert_eq!(Profil::TOUS.len(), 3);
+        assert!("evenements".parse::<Profil>().is_err(), "profil retiré");
         assert!("paie".parse::<Profil>().is_err());
     }
 

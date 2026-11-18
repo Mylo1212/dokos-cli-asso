@@ -2,7 +2,6 @@
 // mise en forme. Testées avec Vitest ; l'interface ne fait que les brancher.
 
 import type {
-  DemandeEvenement,
   DemandeGrandLivre,
   DemandeListe,
   DemandeVente,
@@ -168,39 +167,6 @@ export function demandeVente(saisie: SaisieVente): DemandeVente | string {
 /** Vrai si une commande est livrée avant aujourd'hui : Dokos la refusera. */
 export function livraisonPassee(typeVente: TypeVente, date: string, aujourdhui: string): boolean {
   return typeVente === "commande" && date !== "" && date < aujourdhui;
-}
-
-export interface SaisieEvenement {
-  titre: string;
-  debut: string;
-  fin: string;
-  journee: boolean;
-  lieu: string;
-  description: string;
-  places: string;
-  annulation: boolean;
-  questions: { champ: string; obligatoire: boolean }[];
-}
-
-export function demandeEvenement(saisie: SaisieEvenement): DemandeEvenement | string {
-  const titre = texteOuNull(saisie.titre);
-  if (!titre) return "Donnez un titre à l'événement.";
-  if (!saisie.debut) return "Renseignez le début.";
-  const places = nombreDepuisTexte(saisie.places);
-  if (places !== null && (Number.isNaN(places) || places < 1 || !Number.isInteger(places))) {
-    return "Nombre de places invalide.";
-  }
-  return {
-    titre,
-    debut: saisie.debut,
-    fin: texteOuNull(saisie.fin),
-    journee: saisie.journee,
-    lieu: texteOuNull(saisie.lieu),
-    description: texteOuNull(saisie.description),
-    places,
-    annulation: saisie.annulation,
-    questions: saisie.questions,
-  };
 }
 
 /** Saisies du grand livre, telles qu'elles sont à l'écran. */

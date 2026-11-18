@@ -4,7 +4,6 @@ import { initialiserChat } from "./chat";
 import { alerte, h } from "./dom";
 import { chargerSuivi, donnees } from "./donnees";
 import { enregistrerPreference, preference, type Onglet } from "./etat";
-import { initialiserFormulaires } from "./formulaires";
 import { initialiserImport } from "./import";
 import { initialiserExport } from "./export";
 import { creerMenu, libelleSection, SECTIONS } from "./navigation";
@@ -20,7 +19,6 @@ const panneau = (id: Onglet) => document.querySelector<HTMLElement>(`#${id}`)!;
 const constructeurs: Record<Onglet, (p: HTMLElement) => void> = {
   accueil: creerAccueil,
   ventes: initialiserVentes,
-  formulaires: initialiserFormulaires,
   import: initialiserImport,
   export: initialiserExport,
   suivi: initialiserSuivi,

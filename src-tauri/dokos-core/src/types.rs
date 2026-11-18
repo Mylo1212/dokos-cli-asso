@@ -1,7 +1,7 @@
 //! Documents Dokos lus par l'outil.
 //!
 //! DocTypes et champs standard d'ERPNext, repris tels quels par Dokos.
-//! Les champs personnalisés (inscriptions, etc.) ne sont pas encore gérés.
+//! Les champs personnalisés ne sont pas gérés.
 
 use serde::{Deserialize, Deserializer};
 

@@ -5,7 +5,6 @@ import type { ListeVue } from "./api";
 import {
   actionPourErreur,
   dateLisible,
-  demandeEvenement,
   demandeListe,
   demandeVenteModele,
   dossierDe,
@@ -22,7 +21,6 @@ import {
   prixDeLigne,
   texteOuNull,
   titreErreur,
-  type SaisieEvenement,
   type SaisieListe,
   type SaisieVenteModele,
   type SaisieVente,
@@ -140,32 +138,6 @@ describe("demande de vente", () => {
     expect(livraisonPassee("commande", "2026-11-01", "2026-11-03")).toBe(true);
     expect(livraisonPassee("commande", "2026-11-03", "2026-11-03")).toBe(false);
     expect(livraisonPassee("facture", "2026-11-01", "2026-11-03")).toBe(false);
-  });
-});
-
-describe("demande d'événement", () => {
-  const base: SaisieEvenement = {
-    titre: " Atelier ",
-    debut: "2026-12-14T14:00",
-    fin: "",
-    journee: false,
-    lieu: "",
-    description: "",
-    places: "12",
-    annulation: true,
-    questions: [{ champ: "age", obligatoire: true }],
-  };
-
-  it("construit l'événement", () => {
-    expect(demandeEvenement(base)).toMatchObject({ titre: "Atelier", fin: null, lieu: null, places: 12 });
-    expect(demandeEvenement({ ...base, places: "" })).toMatchObject({ places: null });
-  });
-
-  it("refuse titre, début ou places invalides", () => {
-    expect(demandeEvenement({ ...base, titre: " " })).toMatch(/titre/);
-    expect(demandeEvenement({ ...base, debut: "" })).toMatch(/début/);
-    expect(demandeEvenement({ ...base, places: "1,5" })).toMatch(/places/);
-    expect(demandeEvenement({ ...base, places: "0" })).toMatch(/places/);
   });
 });
 

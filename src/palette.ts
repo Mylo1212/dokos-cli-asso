@@ -40,17 +40,10 @@ export function commandesDeBase(): Commande[] {
     vente("commande", "Nouvelle commande", "bon de commande reservation"),
     vente("facture", "Nouvelle facture", "facturer"),
     {
-      libelle: "Nouvel événement avec inscription",
-      groupe: "Créer",
-      icone: "formulaires",
-      mots: "formulaire atelier stage",
-      action: () => ouvrirOnglet("formulaires"),
-    },
-    {
       libelle: "Importer un fichier Excel",
       groupe: "En nombre",
       icone: "import",
-      mots: "tableau en nombre lot modele",
+      mots: "tableau en nombre lot modele factures paiements reglements articles clients",
       action: () => ouvrirOnglet("import"),
     },
     {
@@ -83,13 +76,6 @@ export function commandesDeBase(): Commande[] {
       icone: "suivi",
       mots: "impayes relance encaisser",
       action: () => ouvrirOnglet("suivi", "suivi-impayes"),
-    },
-    {
-      libelle: "Inscrits d'un événement",
-      groupe: "Suivre",
-      icone: "suivi",
-      mots: "participants inscriptions",
-      action: () => ouvrirOnglet("suivi", "suivi-inscrits"),
     },
     ...SECTIONS.map((s): Commande => ({
       libelle: `Aller à ${s.libelle}`,

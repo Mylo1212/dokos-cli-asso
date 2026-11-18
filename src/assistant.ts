@@ -40,7 +40,7 @@ export function enregistrerPreRemplissage(
 
 /**
  * Pré-remplissage de l'onglet, dès qu'il est prêt : un onglet peut d'abord
- * charger ses listes depuis Dokos (Formulaires) avant de construire son formulaire.
+ * charger ses listes depuis Dokos avant de construire son formulaire.
  */
 export function preRemplissage(onglet: Onglet, delai = 20_000): Promise<PreRemplissage> {
   const deja = enregistres.get(onglet);

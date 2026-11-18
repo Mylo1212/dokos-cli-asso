@@ -1,4 +1,4 @@
-//! Dokos Asso : devis, commandes, factures, formulaires, catalogue,
+//! Dokos Asso : devis, commandes, factures, paiements, catalogue,
 //! imports de tableaux, exports Excel et suivi.
 //!
 //! L'interface ne fait que proposer des demandes ; l'assistant IA (Open
@@ -53,9 +53,6 @@ fn main() {
             commandes::creer_groupe_articles,
             commandes::mes_brouillons,
             commandes::transformer_document,
-            commandes::evenements_recents,
-            commandes::inscrits_evenement,
-            commandes::exporter_inscrits,
             commandes::factures_en_retard,
             commandes::references_export,
             commandes::listes_exportables,
@@ -68,16 +65,11 @@ fn main() {
             commandes::choisir_fichier,
             commandes::analyser_import,
             commandes::creer_import,
-            commandes::questions_formulaire,
-            commandes::verifier_evenement,
-            commandes::creer_evenement,
-            commandes::publier_evenement,
             commandes::etat_ia,
             commandes::enregistrer_ia,
             commandes::tester_ia,
             commandes::discuter,
             commandes::assistant_vente,
-            commandes::assistant_evenement,
             commandes::ouvrir_lien,
             commandes::ouvrir_fichier,
         ])

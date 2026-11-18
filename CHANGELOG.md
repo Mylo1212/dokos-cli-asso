@@ -47,6 +47,16 @@ construction des installateurs (voir `.github/workflows/release.yml`).
 
 ### Retiré
 
+- **Événements et formulaires d'inscription** : onglet Formulaires (création et
+  publication d'un événement et de son formulaire), inscrits d'un événement
+  dans Suivi, événements non publiés dans « Mes brouillons », assistant IA des
+  formulaires (et sa base de connaissance), profil `evenements` des Réglages,
+  commandes `dokos evenement`. Les raccourcis d'onglet vont de `Ctrl+1` à
+  `Ctrl+6`. Un fichier de configuration qui contient encore la clé du profil
+  `evenements` ou la base `formulaires` reste lisible : ces réglages sont
+  ignorés puis effacés à la prochaine sauvegarde ; le secret du profil reste
+  dans le Gestionnaire d'identification Windows, à supprimer à la main si on
+  le souhaite (service `dokos-cli-asso`).
 - **Import › Factures à partir d'un modèle** (et l'option `--modele` de
   `dokos modele`). Le mode « À partir d'un modèle » de l'onglet Ventes reste. Un
   ancien fichier de ce cas est refusé.

@@ -5,7 +5,6 @@ use serde::Deserialize;
 
 use crate::client::{Dokos, Filtre, Liste};
 use crate::erreur::DokosError;
-use crate::evenement::DOCTYPE_EVENEMENT;
 use crate::transport::Transport;
 use crate::types::texte_ou_vide;
 use crate::vente::TypeVente;
@@ -16,7 +15,7 @@ pub const BROUILLONS_MAX: u32 = 50;
 pub struct Brouillon {
     pub doctype: &'static str,
     pub id: String,
-    /// Client ou titre de l'événement.
+    /// Client.
     pub tiers: String,
     pub date: String,
     pub total: f64,
@@ -37,17 +36,6 @@ struct VenteBrouillon {
     grand_total: f64,
     #[serde(default, deserialize_with = "texte_ou_vide")]
     currency: String,
-    #[serde(default, deserialize_with = "texte_ou_vide")]
-    modified: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct EvenementBrouillon {
-    name: String,
-    #[serde(default, deserialize_with = "texte_ou_vide")]
-    subject: String,
-    #[serde(default, deserialize_with = "texte_ou_vide")]
-    starts_on: String,
     #[serde(default, deserialize_with = "texte_ou_vide")]
     modified: String,
 }
@@ -97,29 +85,6 @@ pub fn brouillons_de_vente<T: Transport>(dokos: &Dokos<T>, utilisateur: &str) ->
     Ok(brouillons)
 }
 
-/// Événements non publiés créés par `utilisateur`.
-pub fn evenements_non_publies<T: Transport>(dokos: &Dokos<T>, utilisateur: &str) -> Result<Vec<Brouillon>, DokosError> {
-    let liste = Liste::new(&["name", "subject", "starts_on", "modified"])
-        .filtre(Filtre::egal("published", 0))
-        .filtre(Filtre::different("status", "Cancelled"))
-        .filtre(Filtre::egal("owner", utilisateur))
-        .ordre("modified desc")
-        .limite(BROUILLONS_MAX);
-    let evenements: Vec<EvenementBrouillon> = dokos.lister(DOCTYPE_EVENEMENT, &liste)?;
-    Ok(evenements
-        .into_iter()
-        .map(|e| Brouillon {
-            doctype: DOCTYPE_EVENEMENT,
-            id: e.name,
-            tiers: e.subject,
-            date: e.starts_on,
-            total: 0.0,
-            devise: String::new(),
-            modifie: e.modified,
-        })
-        .collect())
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -147,17 +112,5 @@ mod tests {
         assert_eq!(brouillons[0].doctype, "Sales Invoice");
         let requete = &faux.requetes()[0];
         assert!(requete.parametre("filters").is_some_and(|f| f.contains(r#"["owner","=","api@exemple.fr"]"#)));
-    }
-
-    #[test]
-    fn evenements_non_publies_listes() {
-        let faux = FauxTransport::new();
-        faux.repondre_json(
-            200,
-            &json!({"data": [{"name": "EV-1", "subject": "Atelier", "starts_on": "2026-12-14 14:00:00"}]}),
-        );
-        let brouillons = evenements_non_publies(&Dokos::new(&faux), "api@exemple.fr").expect("événements");
-        assert_eq!(brouillons[0].tiers, "Atelier");
-        assert_eq!(brouillons[0].doctype, "Event");
     }
 }

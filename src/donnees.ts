@@ -11,10 +11,9 @@ export const donnees = {
   connexions: ressource(() => api.etatConnexions(), 60_000),
   brouillons: ressource(() => api.mesBrouillons()),
   impayes: ressource(() => api.facturesEnRetard(jour())),
-  evenements: ressource(() => api.evenementsRecents(jour())),
 };
 
-/** Ce que l'accueil et le suivi montrent : tout sauf la liste des événements. */
+/** Ce que l'accueil et le suivi montrent. */
 const SUIVIES = [donnees.brouillons, donnees.impayes] as const;
 
 /** Rafraîchit ce qui a vieilli (ou tout, si `forcer`). */
@@ -24,7 +23,7 @@ export function chargerSuivi(forcer = false): Promise<void> {
 
 /** Après une création : les brouillons et les factures en retard seront relus à la prochaine visite. */
 export function perimerSuivi(): void {
-  for (const r of [...SUIVIES, donnees.evenements]) r.perimer();
+  for (const r of SUIVIES) r.perimer();
 }
 
 /** Recherches de clients et d'articles par texte (palette, assistant), gardées quelques instants. */

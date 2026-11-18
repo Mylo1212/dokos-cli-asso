@@ -6,12 +6,6 @@ type Forme = string | [cx: number, cy: number, r: number];
 const FORMES = {
   accueil: ["M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"],
   ventes: ["M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z", "M14 3v5h5", "M9 13h6", "M9 17h4"],
-  formulaires: [
-    "M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z",
-    "M4 10h16",
-    "M8 2v4",
-    "M16 2v4",
-  ],
   import: ["M12 16V4", "M7 9l5-5 5 5", "M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"],
   export: ["M12 4v12", "M7 11l5 5 5-5", "M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"],
   suivi: ["M3 12h4l3-8 4 16 3-8h4"],

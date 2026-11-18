@@ -1,8 +1,8 @@
 # dokos-asso
 
-Créer devis, commandes, factures et formulaires d'inscription dans Dokos, par
-son API REST (Frappe), sans Server Script ; importer des factures, articles et
-clients depuis Excel ; exporter des listes vers Excel ; suivre ce qui attend.
+Créer devis, commandes et factures dans Dokos, par son API REST (Frappe), sans
+Server Script ; importer des factures, paiements, articles et clients depuis
+Excel ; exporter des listes vers Excel ; suivre ce qui attend.
 
 Version « asso » de [dokos-cli](https://github.com/Mylo1212/dokos-cli) : même
 fonctionnement sous-jacent, périmètre réduit (ni contrats de travail, ni
@@ -20,16 +20,15 @@ Open WebUI : commencez par une instance de test.
 | Section | Contenu |
 |---|---|
 | **Ventes** (Créer) | Devis, commande ou facture en brouillon. Client et articles choisis dans des listes déroulantes ; **prix unitaire HT facultatif** par ligne (vide : prix de Dokos). Ou « À partir d'un modèle » : copie d'un document étiqueté « Template ». Catalogue des groupes d'articles. |
-| **Formulaires** (Créer) | Un événement et son formulaire d'inscription, créés non publiés, puis publiés d'un clic séparé. |
 | **Import** | Un modèle Excel généré depuis votre Dokos, analysé ligne par ligne, création tout ou rien : **Factures** (plusieurs articles par facture, regroupés automatiquement), **Paiements** (écritures de paiement en brouillon, un paiement pouvant régler plusieurs factures d'un client avec le montant de chacune), **Articles**, **Clients**. |
 | **Export** | Clients, articles, devis, commandes, factures ou employés dans un fichier Excel, avec filtres (client, groupe, territoire, période, statut, nom) en listes déroulantes. **Grand livre** d'un journal comptable et d'une période, directement au format d'import (colonnes DATE à REFINTERNE), avec le journal du fichier au choix : **VEN** ou **REC**. Lecture seule. |
-| **Suivi** | Mes brouillons (et « Commander » / « Facturer »), inscrits d'un événement, factures en retard. Lecture seule, sauf la transformation qui crée un brouillon. |
-| **Accueil**, **Réglages**, **Assistant** | Tableau de bord ; adresse de Dokos et clés API ; chatbot Open WebUI qui qualifie la demande et pré-remplit Ventes, Formulaires ou Export. |
+| **Suivi** | Mes brouillons (et « Commander » / « Facturer »), factures en retard. Lecture seule, sauf la transformation qui crée un brouillon. |
+| **Accueil**, **Réglages**, **Assistant** | Tableau de bord ; adresse de Dokos et clés API ; chatbot Open WebUI qui qualifie la demande et pré-remplit Ventes ou Export. |
 
 Guide complet : `docs/guide-utilisateur.md`. Droits des utilisateurs API :
 `docs/utilisateurs-api.md`.
 
-`Ctrl+K` cherche une action, un client ou un article ; `Ctrl+1` à `Ctrl+7`
+`Ctrl+K` cherche une action, un client ou un article ; `Ctrl+1` à `Ctrl+6`
 changent d'onglet, `Ctrl+Entrée` vérifie, `Ctrl+J` montre l'assistant.
 
 ## Arborescence
@@ -43,7 +42,7 @@ src-tauri/                   appli Tauri + racine du workspace (resolver 3, MSRV
 │   client.rs, meta.rs       /api/resource, /api/method, structure des DocTypes (gardée 2 min)
 │   vente.rs, doublon.rs     devis, commandes, factures en brouillon (prix par ligne facultatif) + doublons
 │   recherche.rs             recherche par texte, lecture complète des clients et articles (listes déroulantes)
-│   formulaire.rs, evenement.rs, inscription.rs   formulaire web d'inscription, événement, inscrits
+│   paiement.rs              écritures de paiement en brouillon (une ou plusieurs factures), modes et comptes
 │   article.rs, clientele.rs groupes d'articles, prix, articles désactivés ; clients
 │   brouillons.rs, suivi.rs, transformation.rs   brouillons, retards, devis → commande → facture
 │   export.rs                listes exportables : colonnes et filtres fixes, pagination, lecture seule
@@ -62,7 +61,6 @@ src-tauri/                   appli Tauri + racine du workspace (resolver 3, MSRV
    | Profil | Sert à | Rôles conseillés |
    |---|---|---|
    | `ventes` | clients, articles, devis, commandes, factures, paiements, export | lecture clients/articles, lecture et création des documents de vente et des écritures de paiement, **sans** validation |
-   | `evenements` | événements, formulaires web, inscrits | Website Manager, création d'événements |
    | `rh` (facultatif) | export des employés | lecture seule |
    | `compta` (facultatif) | export du grand livre | lecture de GL Entry, Accounting Journal, Account |
 
@@ -90,14 +88,14 @@ les fichiers que dans `Documents\Dokos` (`modeles`, `exports`, journal des actio
 Un panneau **Assistant**, à droite de chaque onglet, est un chatbot : il
 qualifie la demande (une question à la fois), indique l'onglet où la faire,
 explique la procédure et, quand il a l'essentiel, propose **Pré-remplir dans …**
-(Ventes, Export, Formulaires). On relit, puis on crée comme d'habitude. Sa
+(Ventes, Export). On relit, puis on crée comme d'habitude. Sa
 référence est `docs/guide-utilisateur.md`, joint à la compilation ; il ne voit
 pas les données de Dokos. Il ne remplit jamais de prix.
 
 - **Réglages › Assistant IA** : adresse (par défaut `http://mac-studio:8080`,
   nom Tailscale), modèle (par défaut `qwen3.6-35b-a3b`), clé API Open WebUI
-  (gardée dans le trousseau) et bases de connaissance (`prestations`,
-  `evenements` : noms d'attente à remplacer par les identifiants réels).
+  (gardée dans le trousseau) et bases de connaissance des ventes (`prestations` :
+  nom d'attente à remplacer par l'identifiant réel).
 - **Réseau** : `http://` n'est accepté que vers une adresse Tailscale (nom court,
   `*.ts.net`, `100.64.0.0/10`) ou locale ; ailleurs, `https://` est obligatoire.
   Le texte des demandes (noms de clients) part vers ce serveur.
@@ -122,9 +120,6 @@ dokos devis brouillon --client "Mairie de Crest" --date 12/11/2026 --ligne "repa
 dokos facture brouillon --client CUST-0002 --date 03/11/2026 --echeance 03/12/2026 --ligne "repas=25*12,5" --ligne "grande salle=1"
 dokos commande brouillon --client CUST-0002 --livraison 12/11/2026 --ligne "repas=25" --ligne "grande salle=1*300@13/11/2026"
 
-dokos evenement creer --titre "Atelier poterie" --debut "14/12/2026 14h" --fin "14/12/2026 17h" --places 12 --question age! --question allergies --simulation
-dokos evenement publier EV00042
-
 dokos articles arbre
 dokos articles lister Restauration
 dokos modele factures
@@ -138,7 +133,6 @@ dokos brouillons
 dokos devis commander SAL-QTN-2026-00012
 dokos commande facturer SAL-ORD-2026-00031
 dokos facture retards
-dokos evenement inscrits EV00042 --sortie inscrits.csv
 dokos journaux
 dokos grand-livre --journal VEN --du 01/10/2026 --au 31/10/2026
 dokos grand-livre --journal VEN --du 01/10/2026 --au 31/10/2026 --journal-fichier REC
@@ -152,8 +146,8 @@ la ligne (vide : prix de Dokos), `@DATE` la livraison d'une ligne de commande.
 ## Contrôles
 
 - **Doublons** : devis, commande, facture (même client, même date, mêmes lignes),
-  événement (même titre, même début), article (même code ou libellé), client
-  (même nom). Un doublon n'est jamais recréé sans `--autoriser-doublon`.
+  paiement (même première facture, même date, même montant), article (même code
+  ou libellé), client (même nom). Un doublon n'est jamais recréé sans `--autoriser-doublon`.
 - **Prix saisi** : dès qu'une ligne a un prix, les règles de prix de Dokos
   (remises) ne s'appliquent à aucune ligne du document ; les taxes restent
   calculées par Dokos.
@@ -169,8 +163,6 @@ Vérifiées dans le code de Dokos v5.18 et de l'appli `bookings` :
 | Commande | `Sales Order` | `customer`, `delivery_date`, `items[].delivery_date` |
 | Facture | `Sales Invoice` | `customer`, `posting_date`, `set_posting_time`, `due_date`, `items[].rate`, `company`, `outstanding_amount` |
 | Paiement | `Payment Entry` (+ `Payment Entry Reference`, `Mode of Payment`, `Account`) | `payment_type`, `posting_date`, `paid_amount`, `received_amount`, `mode_of_payment`, `reference_no`, `reference_date`, `references[]` ; méthodes `get_payment_entry` et `get_bank_cash_account` ; `enabled`, `account_type` |
-| Événement | `Event` (+ bookings) | `subject`, `starts_on`, `published`, `allow_registrations`, `registration_form`, `max_number_of_registrations` |
-| Formulaire | `Web Form` → `Event Registration` | `first_name`, `last_name`, `email`, `mobile_number` + vos champs |
 | Grand livre (lecture) | `GL Entry`, `Accounting Journal`, `Account` | `posting_date`, `account`, `debit`, `credit`, `party`, `voucher_no`, `accounting_journal`, `is_cancelled`, `is_opening` ; `journal_code`, `journal_name`, `type` ; `account_number`, `account_type` |
 
 ## Développement

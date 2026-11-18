@@ -856,35 +856,6 @@ label.case {
   font-size: 12px;
 }
 
-/* --- Questions du formulaire --- */
-
-.questions {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--bordure);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.question {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  padding: 10px 14px;
-  border-top: 1px solid var(--bordure);
-}
-
-.question:first-child {
-  border-top: 0;
-}
-
-.question .type {
-  color: var(--texte-doux);
-  font-size: 12px;
-  margin-left: 6px;
-}
-
 /* --- Répartition des heures --- */
 
 .repartition {

@@ -40,13 +40,11 @@ pub enum Onglet {
     Import,
     Export,
     Suivi,
-    Formulaires,
     Reglages,
 }
 
 impl Onglet {
-    pub const TOUS: [Onglet; 6] =
-        [Onglet::Ventes, Onglet::Import, Onglet::Export, Onglet::Suivi, Onglet::Formulaires, Onglet::Reglages];
+    pub const TOUS: [Onglet; 5] = [Onglet::Ventes, Onglet::Import, Onglet::Export, Onglet::Suivi, Onglet::Reglages];
 
     pub fn nom(self) -> &'static str {
         match self {
@@ -54,7 +52,6 @@ impl Onglet {
             Self::Import => "import",
             Self::Export => "export",
             Self::Suivi => "suivi",
-            Self::Formulaires => "formulaires",
             Self::Reglages => "reglages",
         }
     }
@@ -65,7 +62,6 @@ impl Onglet {
             Self::Import => "Import",
             Self::Export => "Export",
             Self::Suivi => "Suivi",
-            Self::Formulaires => "Formulaires",
             Self::Reglages => "Réglages",
         }
     }
@@ -78,17 +74,14 @@ impl Onglet {
                 "créer en masse depuis un tableau Excel (factures, paiements de factures, articles, clients ; modèle généré, analyse, création tout ou rien)"
             }
             Self::Export => "fichier Excel des clients, articles, devis, commandes, factures ou employés, avec filtres",
-            Self::Suivi => {
-                "brouillons en attente, devis → commande → facture, inscrits d'un événement, factures en retard"
-            }
-            Self::Formulaires => "événement public et formulaire d'inscription, créés non publiés",
+            Self::Suivi => "brouillons en attente, devis → commande → facture, factures en retard",
             Self::Reglages => "adresse de Dokos, clés API par profil, assistant IA, diagnostic",
         }
     }
 
     /// Onglet dont le formulaire peut être pré-rempli à partir d'une demande.
     pub fn pre_remplissable(self) -> bool {
-        matches!(self, Self::Ventes | Self::Export | Self::Formulaires)
+        matches!(self, Self::Ventes | Self::Export)
     }
 }
 
@@ -159,7 +152,7 @@ struct RechercheBrute {
 
 const SCHEMA: &str = r#"{
   "reponse": "texte affiché à l'utilisateur",
-  "onglet": "ventes" | "import" | "export" | "suivi" | "formulaires" | "reglages" | null,
+  "onglet": "ventes" | "import" | "export" | "suivi" | "reglages" | null,
   "etapes": ["étape courte de la procédure dans l'appli"],
   "pre_remplir": true | false,
   "demande": "demande complète et autonome à pré-remplir" | null,
@@ -504,6 +497,7 @@ mod tests {
         assert_eq!("Réglages".parse::<Onglet>(), Ok(Onglet::Reglages));
         assert_eq!(" export ".parse::<Onglet>(), Ok(Onglet::Export));
         assert!("contrats".parse::<Onglet>().is_err());
+        assert!("formulaires".parse::<Onglet>().is_err(), "onglet retiré");
         assert!("Comptabilité".parse::<Onglet>().is_err());
         assert!(Onglet::Export.pre_remplissable() && !Onglet::Import.pre_remplissable());
     }

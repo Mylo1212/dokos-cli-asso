@@ -1,14 +1,9 @@
-//! Suivi : mes brouillons, transformation de documents, inscrits d'un
-//! événement, factures en retard. Lecture seule, sauf la
-//! transformation (création d'un brouillon).
+//! Suivi : mes brouillons, transformation de documents, factures en
+//! retard. Lecture seule, sauf la transformation (création d'un brouillon).
 
-use dokos_core::brouillons::{Brouillon, brouillons_de_vente, evenements_non_publies};
+use dokos_core::brouillons::{Brouillon, brouillons_de_vente};
 use dokos_core::date::Date;
 use dokos_core::doublon::SiDoublon;
-use dokos_core::evenement::DOCTYPE_EVENEMENT;
-use dokos_core::formulaire::{CHAMPS_DE_BASE, DOCTYPE_INSCRIPTION, questions_possibles};
-use dokos_core::inscription::{lister_evenements, lister_inscrits};
-use dokos_core::meta::lire_meta;
 use dokos_core::suivi::{factures_en_retard, soldes_par_client};
 use dokos_core::transformation::{ResultatTransformation, Transformation, transformer};
 use dokos_core::types::DOCTYPE_FACTURE;
@@ -22,8 +17,7 @@ fn vue_brouillon(base: &str, b: Brouillon) -> BrouillonVue {
     let genre = match b.doctype {
         "Quotation" => "devis",
         "Sales Order" => "commande",
-        "Sales Invoice" => "facture",
-        _ => "evenement",
+        _ => "facture",
     };
     BrouillonVue {
         genre: genre.to_owned(),
@@ -41,16 +35,6 @@ fn vue_brouillon(base: &str, b: Brouillon) -> BrouillonVue {
 pub fn brouillons_ventes<T: Transport>(dokos: &Dokos<T>, base: &str) -> Resultat<Vec<BrouillonVue>> {
     let utilisateur = dokos.utilisateur().map_err(texte)?;
     Ok(brouillons_de_vente(dokos, &utilisateur).map_err(texte)?.into_iter().map(|b| vue_brouillon(base, b)).collect())
-}
-
-/// Événements non publiés de l'utilisateur API du profil événements.
-pub fn brouillons_evenements<T: Transport>(dokos: &Dokos<T>, base: &str) -> Resultat<Vec<BrouillonVue>> {
-    let utilisateur = dokos.utilisateur().map_err(texte)?;
-    Ok(evenements_non_publies(dokos, &utilisateur)
-        .map_err(texte)?
-        .into_iter()
-        .map(|b| vue_brouillon(base, b))
-        .collect())
 }
 
 pub fn transformation(genre: &str) -> Resultat<Transformation> {
@@ -92,58 +76,6 @@ pub fn transformer_un_document<T: Transport>(
             },
         },
     })
-}
-
-/// Événements depuis trente jours, pour choisir celui dont on veut les inscrits.
-pub fn evenements<T: Transport>(dokos: &Dokos<T>, base: &str, aujourdhui: Date) -> Resultat<Vec<EvenementVue>> {
-    let depuis = aujourdhui.plus_jours(-30).unwrap_or(aujourdhui).to_string();
-    Ok(lister_evenements(dokos, &depuis, 100)
-        .map_err(texte)?
-        .into_iter()
-        .map(|e| EvenementVue {
-            lien: lien_desk(base, DOCTYPE_EVENEMENT, &e.id),
-            id: e.id,
-            titre: e.titre,
-            debut: e.debut,
-            publie: e.published == 1,
-        })
-        .collect())
-}
-
-/// Inscrits d'un événement : colonnes de base, puis questions du formulaire.
-pub fn inscrits<T: Transport>(dokos: &Dokos<T>, evenement: &str) -> Resultat<InscritsVue> {
-    let meta = lire_meta(dokos, DOCTYPE_INSCRIPTION).map_err(texte)?;
-    let mut colonnes: Vec<ChampVue> = CHAMPS_DE_BASE
-        .iter()
-        .filter(|(nom, _)| *nom != "event")
-        .filter_map(|(nom, obligatoire)| {
-            meta.champ(nom).map(|c| ChampVue {
-                champ: c.fieldname.clone(),
-                libelle: c.libelle().to_owned(),
-                type_champ: c.fieldtype.clone(),
-                obligatoire: *obligatoire,
-            })
-        })
-        .collect();
-    colonnes.extend(questions_possibles(&meta).iter().map(|c| ChampVue {
-        champ: c.fieldname.clone(),
-        libelle: c.libelle().to_owned(),
-        type_champ: c.fieldtype.clone(),
-        obligatoire: false,
-    }));
-    let lignes = lister_inscrits(dokos, evenement).map_err(texte)?;
-    Ok(InscritsVue { evenement: evenement.to_owned(), colonnes, lignes })
-}
-
-/// Tableau des inscrits : en-têtes puis lignes, pour l'export.
-pub fn tableau_inscrits(vue: &InscritsVue) -> (Vec<String>, Vec<Vec<String>>) {
-    let entetes = vue.colonnes.iter().map(|c| c.libelle.clone()).collect();
-    let lignes = vue
-        .lignes
-        .iter()
-        .map(|l| vue.colonnes.iter().map(|c| l.get(&c.champ).cloned().unwrap_or_default()).collect())
-        .collect();
-    (entetes, lignes)
 }
 
 pub fn impayes<T: Transport>(dokos: &Dokos<T>, base: &str, aujourdhui: Date) -> Resultat<ImpayesVue> {
@@ -215,35 +147,6 @@ mod tests {
         assert!(r.cree);
         assert_eq!(r.document.lien, "https://dokos.exemple.fr/app/sales-order/SO-1");
         assert!(transformation("x").is_err());
-    }
-
-    #[test]
-    fn inscrits_avec_questions() {
-        let faux = FauxTransport::new();
-        faux.repondre_json(
-            200,
-            &json!({"docs": [{"name": DOCTYPE_INSCRIPTION, "fields": [
-                {"fieldname": "event", "fieldtype": "Link", "label": "Event"},
-                {"fieldname": "first_name", "fieldtype": "Data", "label": "Prénom"},
-                {"fieldname": "last_name", "fieldtype": "Data", "label": "Nom"},
-                {"fieldname": "email", "fieldtype": "Data", "label": "E-mail"},
-                {"fieldname": "mobile_number", "fieldtype": "Data", "label": "Téléphone"},
-                {"fieldname": "allergies", "fieldtype": "Small Text", "label": "Allergies"},
-            ]}]}),
-        );
-        faux.repondre_json(
-            200,
-            &json!({"data": [{"name": "R-1", "first_name": "Marie", "last_name": "Dupont", "allergies": "arachide"}]}),
-        );
-        let vue = inscrits(&Dokos::new(&faux), "EV-1").expect("inscrits");
-        assert_eq!(
-            vue.colonnes.iter().map(|c| c.champ.as_str()).collect::<Vec<_>>(),
-            ["first_name", "last_name", "email", "mobile_number", "allergies"]
-        );
-        let (entetes, lignes) = tableau_inscrits(&vue);
-        assert_eq!(entetes[4], "Allergies");
-        assert_eq!(lignes[0], ["Marie", "Dupont", "", "", "arachide"]);
-        assert_eq!(vue.lignes[0].get("allergies").map(String::as_str), Some("arachide"));
     }
 
     #[test]

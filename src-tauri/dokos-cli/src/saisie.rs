@@ -1,7 +1,6 @@
 //! Analyse des arguments saisis dans le terminal.
 
-use dokos_core::date::{Date, DateHeure};
-use dokos_core::formulaire::Question;
+use dokos_core::date::Date;
 
 /// Ligne demandée par l'utilisateur, avant résolution de l'article dans Dokos.
 #[derive(Debug, Clone, PartialEq)]
@@ -46,26 +45,9 @@ pub fn date(texte: &str) -> Result<Date, String> {
     texte.parse().map_err(|e: dokos_core::date::ErreurDate| e.to_string())
 }
 
-pub fn date_heure(texte: &str) -> Result<DateHeure, String> {
-    texte.parse().map_err(|e: dokos_core::date::ErreurDate| e.to_string())
-}
-
 /// Nombre avec point ou virgule décimale.
 pub fn nombre(texte: &str) -> Option<f64> {
     texte.trim().replace(',', ".").parse().ok().filter(|n: &f64| n.is_finite())
-}
-
-/// `age!` (obligatoire) ou `allergies` (facultative).
-pub fn question(texte: &str) -> Result<Question, String> {
-    let texte = texte.trim();
-    let (champ, obligatoire) = match texte.strip_suffix('!') {
-        Some(champ) => (champ.trim(), true),
-        None => (texte, false),
-    };
-    if champ.is_empty() {
-        return Err("question vide".to_owned());
-    }
-    Ok(Question { champ: champ.to_owned(), obligatoire })
 }
 
 /// `25` plutôt que `25.0`, `2.5` reste `2.5`.
@@ -117,13 +99,6 @@ mod tests {
         ] {
             assert!(ligne(texte).is_err(), "{texte}");
         }
-    }
-
-    #[test]
-    fn questions() {
-        assert_eq!(question("age!"), Ok(Question { champ: "age".into(), obligatoire: true }));
-        assert_eq!(question("allergies"), Ok(Question { champ: "allergies".into(), obligatoire: false }));
-        assert!(question("!").is_err());
     }
 
     #[test]

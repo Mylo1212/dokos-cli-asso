@@ -78,50 +78,11 @@ export interface ResultatVente {
   autres: DocumentVue[];
 }
 
-export interface ChampVue {
-  champ: string;
-  libelle: string;
-  typeChamp: string;
-  obligatoire: boolean;
-}
-
-export interface DemandeEvenement {
-  titre: string;
-  debut: string;
-  fin: string | null;
-  journee: boolean;
-  lieu: string | null;
-  description: string | null;
-  places: number | null;
-  annulation: boolean;
-  questions: { champ: string; obligatoire: boolean }[];
-}
-
-export interface ApercuEvenement {
-  formulaireTitre: string;
-  formulaireRoute: string;
-  champs: ChampVue[];
-  existant: DocumentVue | null;
-}
-
-export interface ResultatEvenement {
-  cree: boolean;
-  evenement: DocumentVue;
-  formulaire: string;
-  formulaireReutilise: boolean;
-}
-
-export interface PublicationVue {
-  page: string;
-  inscription: string;
-}
-
 export interface EtatIa {
   active: boolean;
   url: string;
   modele: string;
   basesVentes: string;
-  basesFormulaires: string;
   cleEnregistree: boolean;
 }
 
@@ -144,19 +105,6 @@ export interface PropositionVente extends Remarques {
   date: string | null;
   echeance: string | null;
   lignes: { texte: string; article: ChoixVue<ArticleVue>; quantite: number | null; livraison: string | null }[];
-}
-
-export interface PropositionEvenement extends Remarques {
-  titre: string | null;
-  debut: string | null;
-  fin: string | null;
-  journee: boolean;
-  lieu: string | null;
-  description: string | null;
-  places: number | null;
-  annulation: boolean;
-  questionsFormulaire: { champ: string; obligatoire: boolean }[];
-  champsACreer: string[];
 }
 
 // --- Catalogue ---
@@ -200,7 +148,7 @@ export interface ResultatArticle {
 // --- Suivi ---
 
 export interface BrouillonVue {
-  genre: "devis" | "commande" | "facture" | "evenement";
+  genre: "devis" | "commande" | "facture";
   id: string;
   tiers: string;
   date: string;
@@ -212,22 +160,7 @@ export interface BrouillonVue {
 
 export interface BrouillonsVue {
   ventes: BrouillonVue[];
-  evenements: BrouillonVue[];
   avertissements: string[];
-}
-
-export interface EvenementVue {
-  id: string;
-  titre: string;
-  debut: string;
-  publie: boolean;
-  lien: string;
-}
-
-export interface InscritsVue {
-  evenement: string;
-  colonnes: ChampVue[];
-  lignes: Record<string, string>[];
 }
 
 export interface FactureRetardVue {
@@ -501,9 +434,6 @@ export const api = {
     source: string,
     autoriserDoublon: boolean,
   ) => invoke<{ cree: boolean; document: DocumentVue }>("transformer_document", { genre, source, autoriserDoublon }),
-  evenementsRecents: (aujourdhuiTexte: string) => invoke<EvenementVue[]>("evenements_recents", { aujourdhuiTexte }),
-  inscritsEvenement: (id: string) => invoke<InscritsVue>("inscrits_evenement", { id }),
-  exporterInscrits: (id: string) => invoke<string>("exporter_inscrits", { id }),
   facturesEnRetard: (aujourdhuiTexte: string) => invoke<ImpayesVue>("factures_en_retard", { aujourdhuiTexte }),
 
   listesExportables: () => invoke<ListeVue[]>("listes_exportables"),
@@ -538,28 +468,14 @@ export const api = {
   creerVenteModele: (demande: DemandeVenteModele, autoriserDoublon: boolean) =>
     invoke<ResultatVente>("creer_vente_modele", { demande, autoriserDoublon }),
 
-  questionsFormulaire: () => invoke<ChampVue[]>("questions_formulaire"),
-  verifierEvenement: (demande: DemandeEvenement) => invoke<ApercuEvenement>("verifier_evenement", { demande }),
-  creerEvenement: (demande: DemandeEvenement, autoriserDoublon: boolean) =>
-    invoke<ResultatEvenement>("creer_evenement", { demande, autoriserDoublon }),
-  publierEvenement: (id: string) => invoke<PublicationVue>("publier_evenement", { id }),
-
   etatIa: () => invoke<EtatIa>("etat_ia"),
-  enregistrerIa: (
-    active: boolean,
-    url: string,
-    modele: string,
-    basesVentes: string,
-    basesFormulaires: string,
-    cle: string,
-  ) => invoke<string>("enregistrer_ia", { active, url, modele, basesVentes, basesFormulaires, cle }),
+  enregistrerIa: (active: boolean, url: string, modele: string, basesVentes: string, cle: string) =>
+    invoke<string>("enregistrer_ia", { active, url, modele, basesVentes, cle }),
   testerIa: () => invoke<string>("tester_ia"),
   discuter: (messages: MessageChat[], onglet: string, aujourdhui: string) =>
     invoke<ReponseChat>("discuter", { messages, onglet, aujourdhui }),
   assistantVente: (demande: string, aujourdhui: string) =>
     invoke<PropositionVente>("assistant_vente", { demande, aujourdhui }),
-  assistantEvenement: (demande: string, aujourdhui: string) =>
-    invoke<PropositionEvenement>("assistant_evenement", { demande, aujourdhui }),
 
   ouvrirLien: (url: string) => invoke<void>("ouvrir_lien", { url }),
   ouvrirFichier: (chemin: string) => invoke<void>("ouvrir_fichier", { chemin }),

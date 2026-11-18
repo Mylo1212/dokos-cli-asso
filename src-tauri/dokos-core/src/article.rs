@@ -4,7 +4,7 @@
 //! Lecture : arbre des groupes, articles d'un groupe et de ses sous-groupes,
 //! prix de la liste de prix de vente par défaut (indicatif : Dokos reste seul
 //! juge du prix appliqué). Écriture : un article est créé **désactivé** puis
-//! activé par un geste séparé, comme un événement est créé non publié.
+//! activé par un geste séparé.
 
 use std::collections::BTreeMap;
 use std::fmt;

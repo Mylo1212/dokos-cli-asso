@@ -1,15 +1,15 @@
 # Guide de l'utilisateur — Dokos Asso
 
 Dokos Asso prépare des documents dans Dokos sans jamais les valider à votre
-place : tout ce qu'il crée est un **brouillon** (ou un événement **non
-publié**) que vous relisez et validez dans Dokos. Il refuse de créer quand il
+place : tout ce qu'il crée est un **brouillon** que vous relisez et validez
+dans Dokos. Il refuse de créer quand il
 n'est pas sûr : client ou article ambigu, doublon, ligne d'import à corriger.
 
 ## Premier démarrage
 
 1. Ouvrez **Réglages**. Renseignez l'adresse de votre Dokos
    (`https://…`, sans chemin) et la société si vous en avez plusieurs.
-2. Pour chaque usage (Ventes, Événements, RH, Comptabilité), collez la clé et le secret de
+2. Pour chaque usage (Ventes, RH, Comptabilité), collez la clé et le secret de
    l'utilisateur API correspondant (voir `docs/utilisateurs-api.md`), puis
    **Enregistrer** : l'appli teste la connexion avant de garder quoi que ce soit.
    Le secret va dans le Gestionnaire d'identification Windows, jamais dans un
@@ -22,13 +22,13 @@ n'est pas sûr : client ou article ambigu, doublon, ligne d'import à corriger.
 ## L'écran
 
 - **Menu de gauche** : les onglets, rangés par usage. **Accueil** ; *Créer* :
-  **Ventes**, **Formulaires** ; *En nombre* : **Import**, **Export** ;
+  **Ventes** ; *En nombre* : **Import**, **Export** ;
   *Suivre* : **Suivi** ; en bas, l'état de la connexion à Dokos, l'**Assistant**
   et les **Réglages**. Le menu se réduit aux pictogrammes (bouton en haut du
   menu, ou d'office en fenêtre étroite). Un onglet grisé attend sa clé API dans
   Réglages ; le chiffre à côté de Suivi est le nombre de brouillons en attente.
 - **Accueil** : ce qui attend (brouillons à valider, factures en retard) — un
-  clic ouvre le bloc correspondant de Suivi —, les créations en un clic (devis, commande, facture, événement,
+  clic ouvre le bloc correspondant de Suivi —, les créations en un clic (devis, commande, facture,
   import, export) et les derniers brouillons.
 - **Listes déroulantes** : partout où l'on choisit un élément de Dokos (client,
   article, groupe, territoire), le champ s'ouvre au clic ou avec la flèche et
@@ -40,7 +40,7 @@ n'est pas sûr : client ou article ambigu, doublon, ligne d'import à corriger.
   « thème sombre »…) ou le nom d'un client ou d'un article. Entrée sur un
   client ouvre Ventes avec ce client ; sur un article, l'ajoute à la vente en
   cours ; « Demander à l'assistant » envoie le texte au chatbot.
-- **Raccourcis** : `Ctrl+1` à `Ctrl+7` changent d'onglet (ordre du menu),
+- **Raccourcis** : `Ctrl+1` à `Ctrl+6` changent d'onglet (ordre du menu),
   `Ctrl+Entrée` lance **Vérifier** (ou l'analyse, ou l'export) de l'onglet
   affiché — jamais une création —, `Ctrl+J` affiche ou masque l'assistant,
   `Ctrl+B` réduit le menu.
@@ -103,12 +103,6 @@ Dans le panneau Catalogue, « Gérer le catalogue » permet de créer un article
 (**désactivé**, à activer après relecture), un sous-groupe, ou de déplacer un
 article (choisi dans la liste, ou son code tapé). Un code ou un libellé déjà
 pris n'est jamais recréé.
-
-## Formulaires
-
-Événement public et formulaire d'inscription, créés **non publiés** ; le
-bouton « Publier sur le site » est séparé. Les questions possibles sont les
-champs existants d'« Event Registration » dans Dokos.
 
 ## Import
 
@@ -244,12 +238,10 @@ réduisez la période. Rien n'est modifié dans Dokos.
 Un seul bouton **Actualiser**, en haut, relit tout ; l'heure de la dernière
 lecture est affichée à côté.
 
-- **Mes brouillons** : devis, commandes, factures et événements créés par
-  l'outil qui attendent une validation ou une publication, avec lien vers
+- **Mes brouillons** : devis, commandes et factures créés par l'outil qui
+  attendent une validation, avec lien vers
   Dokos. « Commander » (sur un devis validé) et « Facturer » (sur une commande
   validée) créent le document suivant en brouillon.
-- **Inscrits d'un événement** : liste et export Excel (prénom, nom, e-mail,
-  téléphone, réponses aux questions).
 - **Factures en retard** : échéance dépassée et solde non nul, par client. La
   relance se fait dans Dokos.
 
@@ -269,7 +261,7 @@ Le stock n'est pas affiché.
    quel client ? quelles dates ?), indique l'onglet où la faire et explique la
    procédure étape par étape.
 3. Quand il a l'essentiel, il propose **Pré-remplir dans …** : l'onglet s'ouvre
-   et son formulaire se remplit (Ventes, Export, Formulaires). Les clients,
+   et son formulaire se remplit (Ventes, Export). Les clients,
    articles et groupes sont recherchés dans Dokos ; s'il y a plusieurs
    candidats, les boutons de choix apparaissent dans la discussion. Il ne
    remplit jamais de prix : saisissez-les vous-même.

@@ -83,22 +83,6 @@ fn hypotheses_sur_les_doctypes() {
         ("Item", &["item_name", "item_group", "stock_uom", "is_sales_item", "has_variants", "disabled"]),
         ("Item Group", &["parent_item_group", "is_group"]),
         ("Customer", &["customer_name", "customer_type", "customer_group", "territory"]),
-        (
-            "Event",
-            &[
-                "subject",
-                "starts_on",
-                "ends_on",
-                "published",
-                "allow_registrations",
-                "registration_form",
-                "max_number_of_registrations",
-                "allow_cancellations",
-                "route",
-            ],
-        ),
-        ("Event Registration", &["event", "first_name", "last_name", "email", "mobile_number"]),
-        ("Web Form", &["route", "doc_type", "published", "web_form_fields"]),
         ("Employee", &["employee_name", "department", "designation", "date_of_joining", "status"]),
         (
             "GL Entry",

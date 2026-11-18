@@ -26,19 +26,11 @@ export function initialiserReglages(panneau: HTMLElement, surEnregistrement: () 
   const urlIa = saisie({ type: "url", placeholder: "http://mac-studio:8080" });
   const modele = saisie({ placeholder: "qwen3.6-35b-a3b" });
   const basesVentes = saisie({ placeholder: "Identifiants séparés par des virgules" });
-  const basesFormulaires = saisie({ placeholder: "Identifiants séparés par des virgules" });
   const cleIa = saisie({ type: "password", autocomplete: "off" });
   const zoneIa = h("div", { "aria-live": "polite" });
   const enregistrerIa = bouton("Enregistrer et tester", "principal", async () => {
     const etat = await occupe([enregistrerIa], zoneIa, () =>
-      api.enregistrerIa(
-        iaActive.input.checked,
-        urlIa.value,
-        modele.value,
-        basesVentes.value,
-        basesFormulaires.value,
-        cleIa.value,
-      ),
+      api.enregistrerIa(iaActive.input.checked, urlIa.value, modele.value, basesVentes.value, cleIa.value),
     );
     definirAssistantActif(iaActive.input.checked);
     if (etat !== undefined) {
@@ -55,7 +47,6 @@ export function initialiserReglages(panneau: HTMLElement, surEnregistrement: () 
       urlIa.value = etat.url;
       modele.value = etat.modele;
       basesVentes.value = etat.basesVentes;
-      basesFormulaires.value = etat.basesFormulaires;
       cleIa.placeholder = etat.cleEnregistree
         ? "Clé enregistrée (laisser vide pour la garder)"
         : "Clé API (Open WebUI › Réglages › Compte)";
@@ -124,7 +115,6 @@ export function initialiserReglages(panneau: HTMLElement, surEnregistrement: () 
         champ("Modèle", modele),
         champ("Clé API", cleIa),
         champ("Bases de connaissance — Ventes", basesVentes),
-        champ("Bases — Formulaires", basesFormulaires),
       ),
       h(
         "p",

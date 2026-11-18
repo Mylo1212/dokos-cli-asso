@@ -6,12 +6,11 @@ use dokos_core::article::{
     ARTICLES_PAR_GROUPE_MAX, CreationArticle, Noeud, NouvelArticle, activer_article, arbre_des_groupes,
     articles_du_groupe, chercher_article_identique, creer_article,
 };
-use dokos_core::brouillons::{brouillons_de_vente, evenements_non_publies};
+use dokos_core::brouillons::brouillons_de_vente;
 use dokos_core::date::Date;
 use dokos_core::doublon::SiDoublon;
 use dokos_core::export::{FiltresExport, Reference, TypeListe, lire_tableau, retrouver_reference};
 use dokos_core::grand_livre::{Journal, JournalFichier, lire_grand_livre, lister_journaux};
-use dokos_core::inscription::lister_inscrits;
 use dokos_core::recherche::{Correspondance, trouver_client};
 use dokos_core::suivi::{factures_en_retard, soldes_par_client};
 use dokos_core::transformation::{ResultatTransformation, Transformation, transformer};
@@ -382,30 +381,17 @@ pub fn exporter_grand_livre<T: Transport>(
 
 // --- Suivi ---------------------------------------------------------------------------
 
-pub fn afficher_brouillons<T: Transport>(
-    ventes: Option<&Dokos<T>>,
-    evenements: Option<&Dokos<T>>,
-) -> Result<(), Erreur> {
-    let mut rien = true;
-    if let Some(dokos) = ventes {
-        let utilisateur = dokos.utilisateur_connecte()?;
-        for b in brouillons_de_vente(dokos, &utilisateur)? {
-            rien = false;
-            println!(
-                "{:<14} {:<22} {} {:<12} {:>10.2} {}  (modifié {})",
-                b.doctype, b.id, b.date, b.tiers, b.total, b.devise, b.modifie
-            );
-        }
-    }
-    if let Some(dokos) = evenements {
-        let utilisateur = dokos.utilisateur_connecte()?;
-        for b in evenements_non_publies(dokos, &utilisateur)? {
-            rien = false;
-            println!("{:<14} {:<22} {} {}  (non publié, modifié {})", b.doctype, b.id, b.date, b.tiers, b.modifie);
-        }
-    }
-    if rien {
+pub fn afficher_brouillons<T: Transport>(dokos: &Dokos<T>) -> Result<(), Erreur> {
+    let utilisateur = dokos.utilisateur_connecte()?;
+    let brouillons = brouillons_de_vente(dokos, &utilisateur)?;
+    if brouillons.is_empty() {
         println!("Aucun brouillon créé par l'outil en attente.");
+    }
+    for b in brouillons {
+        println!(
+            "{:<14} {:<22} {} {:<12} {:>10.2} {}  (modifié {})",
+            b.doctype, b.id, b.date, b.tiers, b.total, b.devise, b.modifie
+        );
     }
     Ok(())
 }
@@ -433,39 +419,6 @@ pub fn transformer_document<T: Transport>(
                 d.statut()
             )
         }
-    }
-    Ok(())
-}
-
-pub fn afficher_inscrits<T: Transport>(
-    dokos: &Dokos<T>,
-    evenement: &str,
-    sortie: Option<PathBuf>,
-) -> Result<(), Erreur> {
-    let inscrits = lister_inscrits(dokos, evenement)?;
-    println!("{} inscrit(s) à {evenement}.", inscrits.len());
-    let colonnes = ["first_name", "last_name", "email", "mobile_number"];
-    for i in &inscrits {
-        let valeurs: Vec<&str> = colonnes.iter().map(|c| i.get(*c).map(String::as_str).unwrap_or("")).collect();
-        println!("  {}", valeurs.join("  "));
-    }
-    if let Some(chemin) = sortie {
-        let mut entetes: Vec<String> = Vec::new();
-        for i in &inscrits {
-            for cle in i.keys() {
-                if !entetes.contains(cle) {
-                    entetes.push(cle.clone());
-                }
-            }
-        }
-        let lignes: Vec<Vec<String>> =
-            inscrits.iter().map(|i| entetes.iter().map(|e| i.get(e).cloned().unwrap_or_default()).collect()).collect();
-        let contenu = std::iter::once(entetes.join(";"))
-            .chain(lignes.iter().map(|l| l.iter().map(|v| v.replace(';', ",")).collect::<Vec<_>>().join(";")))
-            .collect::<Vec<_>>()
-            .join("\n");
-        std::fs::write(&chemin, contenu).map_err(|e| Erreur::Fichier(format!("{} : {e}", chemin.display())))?;
-        println!("Liste écrite : {}", chemin.display());
     }
     Ok(())
 }

@@ -20,7 +20,7 @@ const PISTES = [
   "Coordonnées d'un client",
   "Exporter la liste des clients",
   "Importer des factures depuis Excel",
-  "Créer un événement avec inscription",
+  "Importer des paiements de factures",
   "Voir les factures en retard",
 ];
 

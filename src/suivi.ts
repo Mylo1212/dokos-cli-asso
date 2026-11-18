@@ -1,21 +1,9 @@
 // Onglet Suivi : mes brouillons, transformation devis → commande → facture,
-// inscrits d'un événement, factures en retard. Lecture seule, sauf
-// la transformation qui crée un brouillon.
+// factures en retard. Lecture seule, sauf la transformation qui crée un
+// brouillon.
 
-import { api, type BrouillonVue, type BrouillonsVue, type EvenementVue, type ImpayesVue } from "./api";
-import {
-  alerte,
-  alerteErreur,
-  bouton,
-  h,
-  lienDokos,
-  lienFichier,
-  montant,
-  occupe,
-  saisie,
-  selection,
-  tableau,
-} from "./dom";
+import { api, type BrouillonVue, type BrouillonsVue, type ImpayesVue } from "./api";
+import { alerte, alerteErreur, bouton, h, lienDokos, montant, occupe, saisie, tableau } from "./dom";
 import { chargerSuivi, donnees, perimerSuivi } from "./donnees";
 import type { Ressource } from "./ressource";
 import { dateLisible, heureCourte } from "./valeurs";
@@ -44,18 +32,11 @@ export function initialiserSuivi(panneau: HTMLElement): void {
   const zoneBrouillons = h("div", { "aria-live": "polite" });
 
   function ligneBrouillon(b: BrouillonVue): (string | Node)[] {
-    const genre = { devis: "Devis", commande: "Commande", facture: "Facture", evenement: "Événement" }[b.genre];
+    const genre = { devis: "Devis", commande: "Commande", facture: "Facture" }[b.genre];
     const actions = h("span", { class: "actions-ligne" }, lienDokos(b.lien));
     if (b.genre === "devis") actions.append(boutonTransformation("Commander", "devis_en_commande", b.id));
     if (b.genre === "commande") actions.append(boutonTransformation("Facturer", "commande_en_facture", b.id));
-    return [
-      genre,
-      b.id,
-      b.tiers,
-      dateLisible(b.date),
-      b.genre === "evenement" ? "non publié" : montant(b.total, b.devise),
-      actions,
-    ];
+    return [genre, b.id, b.tiers, dateLisible(b.date), montant(b.total, b.devise), actions];
   }
 
   function boutonTransformation(
@@ -85,75 +66,14 @@ export function initialiserSuivi(panneau: HTMLElement): void {
   }
 
   const afficherBrouillons = (v: BrouillonsVue): (Node | string)[] => {
-    const lignes = [...v.ventes, ...v.evenements].map(ligneBrouillon);
+    const lignes = v.ventes.map(ligneBrouillon);
     return [
       ...v.avertissements.map((a) => alerte("info", "Profil non configuré", a)),
       lignes.length === 0
         ? h("p", { class: "note sans-marge" }, "Aucun brouillon créé par l'outil en attente.")
-        : h(
-            "div",
-            { class: "defilement" },
-            tableau(["Type", "Identifiant", "Client / titre", "Date", "Total", ""], lignes),
-          ),
+        : h("div", { class: "defilement" }, tableau(["Type", "Identifiant", "Client", "Date", "Total", ""], lignes)),
     ];
   };
-
-  // --- Inscrits ---
-  const evenements = selection([], "Choisir un événement…");
-  const zoneInscrits = h("div", { "aria-live": "polite" });
-  let listeEvenements: EvenementVue[] = [];
-  const voirInscrits = bouton("Voir les inscrits", "principal", async () => {
-    if (!evenements.value)
-      return zoneInscrits.replaceChildren(alerte("attention", "À compléter", "Choisissez un événement."));
-    const v = await occupe([voirInscrits], zoneInscrits, () => api.inscritsEvenement(evenements.value));
-    if (!v) return;
-    const zoneExport = h("div");
-    const exporter = bouton("Exporter en Excel", "", async () => {
-      const chemin = await occupe([exporter], zoneExport, () => api.exporterInscrits(v.evenement));
-      if (chemin)
-        zoneExport.replaceChildren(
-          alerte(
-            "succes",
-            "Liste enregistrée",
-            h("p", { class: "chemin" }, chemin),
-            h("div", { class: "actions" }, lienFichier(chemin)),
-          ),
-        );
-    });
-    zoneInscrits.replaceChildren(
-      alerte("info", `${v.lignes.length} inscrit(s)`, h("div", { class: "actions" }, exporter)),
-      zoneExport,
-      ...(v.lignes.length > 0
-        ? [
-            h(
-              "div",
-              { class: "defilement" },
-              tableau(
-                v.colonnes.map((c) => c.libelle),
-                v.lignes.map((l) => v.colonnes.map((c) => l[c.champ] ?? "")),
-              ),
-            ),
-          ]
-        : []),
-    );
-  });
-  donnees.evenements.abonner(() => {
-    const etat = donnees.evenements.etat();
-    if (etat.erreur !== undefined && etat.valeur === undefined) {
-      zoneInscrits.replaceChildren(alerteErreur(etat.erreur, () => void donnees.evenements.charger(true)));
-      return;
-    }
-    if (etat.valeur === undefined || etat.valeur === listeEvenements) return;
-    listeEvenements = etat.valeur;
-    const choisi = evenements.value;
-    evenements.replaceChildren(
-      h("option", { value: "" }, "Choisir un événement…"),
-      ...listeEvenements.map((e) =>
-        h("option", { value: e.id }, `${e.titre} — ${dateLisible(e.debut)}${e.publie ? "" : " (non publié)"}`),
-      ),
-    );
-    if (listeEvenements.some((e) => e.id === choisi)) evenements.value = choisi;
-  });
 
   // --- Factures en retard ---
   const zoneImpayes = h("div", { "aria-live": "polite" });
@@ -206,7 +126,7 @@ export function initialiserSuivi(panneau: HTMLElement): void {
   const suivies = [donnees.brouillons, donnees.impayes];
   const fraicheur = h("span", { class: "fraicheur" });
   const actualiser = bouton("Actualiser", "discret", async () => {
-    await Promise.all([chargerSuivi(true), donnees.evenements.charger(true)]);
+    await chargerSuivi(true);
   });
   const majFraicheur = () => {
     const enCours = suivies.some((r) => r.etat().enCours);
@@ -244,14 +164,6 @@ export function initialiserSuivi(panneau: HTMLElement): void {
       zoneBrouillons,
     ),
     h("div", { class: "carte", id: "suivi-impayes" }, h("h2", {}, "Factures en retard"), zoneImpayes),
-    h(
-      "div",
-      { class: "carte", id: "suivi-inscrits" },
-      h("h2", {}, "Inscrits d'un événement"),
-      h("div", { class: "grille" }, h("label", { class: "champ large" }, "Événement", evenements)),
-      h("div", { class: "actions" }, voirInscrits),
-      zoneInscrits,
-    ),
   );
 
   // À chaque visite : ce qui a plus de deux minutes, ou qu'une création a
@@ -259,6 +171,5 @@ export function initialiserSuivi(panneau: HTMLElement): void {
   majFraicheur();
   panneau.addEventListener("onglet-affiche", () => {
     void chargerSuivi();
-    void donnees.evenements.charger();
   });
 }

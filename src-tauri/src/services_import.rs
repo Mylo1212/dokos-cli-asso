@@ -215,29 +215,6 @@ pub fn executer_un_import<T: Transport>(
     Ok(vue)
 }
 
-/// Écrit un tableau simple (en-têtes + lignes) en `.xlsx`.
-pub fn ecrire_tableau(chemin: &Path, titre: &str, entetes: &[String], lignes: &[Vec<String>]) -> Resultat<()> {
-    use rust_xlsxwriter::{Format, Workbook};
-    let construire = || -> Result<(), rust_xlsxwriter::XlsxError> {
-        let mut classeur = Workbook::new();
-        let feuille = classeur.add_worksheet();
-        feuille.set_name(titre.chars().take(31).collect::<String>())?;
-        feuille.set_freeze_panes(1, 0)?;
-        let gras = Format::new().set_bold();
-        for (c, e) in entetes.iter().enumerate() {
-            feuille.write_string_with_format(0, c as u16, e, &gras)?;
-            feuille.set_column_width(c as u16, 22)?;
-        }
-        for (r, ligne) in lignes.iter().enumerate() {
-            for (c, v) in ligne.iter().enumerate() {
-                feuille.write_string(r as u32 + 1, c as u16, v)?;
-            }
-        }
-        classeur.save(chemin)
-    };
-    construire().map_err(|e| ErreurVue::fichier(format!("{} : {e}", chemin.display())))
-}
-
 #[cfg(test)]
 mod tests {
     use dokos_core::transport::faux::FauxTransport;
@@ -298,12 +275,5 @@ mod tests {
         assert!(liste.iter().all(|c| c.nom != "employes" && c.nom != "evenements" && c.nom != "devis"));
         let rapport = chemin_rapport(Path::new("/tmp/Dokos"), Path::new("/x/factures octobre.xlsx"));
         assert!(rapport.ends_with("factures-octobre.resultat.xlsx"));
-        let dossier = dossier_test("tableau");
-        let chemin = dossier.join("inscrits.xlsx");
-        ecrire_tableau(&chemin, "Inscrits", &["Prénom".into()], &[vec!["Marie".into()]]).expect("tableau");
-        let relu = dokos_import::lire_fichier(&chemin).expect("relecture");
-        assert_eq!(relu.entetes, ["Prénom"]);
-        assert_eq!(relu.lignes[0].1, ["Marie"]);
-        let _ = std::fs::remove_dir_all(dossier);
     }
 }

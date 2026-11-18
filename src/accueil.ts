@@ -15,7 +15,6 @@ const GENRES: Record<BrouillonVue["genre"], string> = {
   devis: "Devis",
   commande: "Commande",
   facture: "Facture",
-  evenement: "Événement",
 };
 
 /** Tuile chiffrée : un libellé, une valeur, une ligne de détail ; ouvre le bloc correspondant du suivi. */
@@ -104,7 +103,7 @@ export function creerAccueil(panneau: HTMLElement): void {
       etat,
       () => void donnees.brouillons.charger(true),
       (v) => {
-        const tous = [...v.ventes, ...v.evenements];
+        const tous = v.ventes;
         const parGenre = (Object.keys(GENRES) as BrouillonVue["genre"][])
           .map((g) => ({ genre: g, nombre: tous.filter((b) => b.genre === g).length }))
           .filter((g) => g.nombre > 0)
@@ -117,7 +116,7 @@ export function creerAccueil(panneau: HTMLElement): void {
     );
     const v = etat.valeur;
     if (!v) return zoneDerniers.replaceChildren();
-    const derniers = [...v.ventes, ...v.evenements].sort((a, b) => b.modifie.localeCompare(a.modifie)).slice(0, 5);
+    const derniers = [...v.ventes].sort((a, b) => b.modifie.localeCompare(a.modifie)).slice(0, 5);
     zoneDerniers.replaceChildren(
       h("h2", { class: "titre-bloc" }, "Derniers brouillons"),
       ...(derniers.length === 0
@@ -127,13 +126,13 @@ export function creerAccueil(panneau: HTMLElement): void {
               "div",
               { class: "carte sans-rembourrage" },
               tableau(
-                ["Type", "Identifiant", "Client / titre", "Date", "Total", ""],
+                ["Type", "Identifiant", "Client", "Date", "Total", ""],
                 derniers.map((b) => [
                   GENRES[b.genre],
                   h("span", { class: "id" }, b.id),
                   b.tiers,
                   dateLisible(b.date),
-                  b.genre === "evenement" ? "non publié" : montant(b.total, b.devise),
+                  montant(b.total, b.devise),
                   lienDokos(b.lien),
                 ]),
               ),
@@ -215,8 +214,7 @@ export function creerAccueil(panneau: HTMLElement): void {
       raccourci("Devis", "Une proposition chiffrée", "ventes", vente("devis")),
       raccourci("Commande", "Une prestation confirmée", "ventes", vente("commande")),
       raccourci("Facture", "À valider ensuite dans Dokos", "ventes", vente("facture")),
-      raccourci("Événement", "Avec son formulaire d'inscription", "formulaires", vers("formulaires")),
-      raccourci("Import Excel", "Factures, articles, clients", "import", vers("import")),
+      raccourci("Import Excel", "Factures, paiements, articles, clients", "import", vers("import")),
       raccourci("Export Excel", "Clients, articles, ventes, employés", "export", vers("export")),
     ),
     zoneDerniers,

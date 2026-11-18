@@ -2,8 +2,6 @@
 //! (`Demande…`) ; Rust les valide avec les types de `dokos-core` et construit
 //! lui-même toutes les requêtes vers Dokos.
 
-use std::collections::BTreeMap;
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
@@ -111,62 +109,6 @@ pub struct ResultatVente {
     pub autres: Vec<DocumentVue>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct QuestionDemande {
-    pub champ: String,
-    pub obligatoire: bool,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DemandeEvenement {
-    pub titre: String,
-    pub debut: String,
-    pub fin: Option<String>,
-    pub journee: bool,
-    pub lieu: Option<String>,
-    pub description: Option<String>,
-    pub places: Option<u32>,
-    pub annulation: bool,
-    pub questions: Vec<QuestionDemande>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChampVue {
-    pub champ: String,
-    pub libelle: String,
-    pub type_champ: String,
-    pub obligatoire: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApercuEvenement {
-    pub formulaire_titre: String,
-    pub formulaire_route: String,
-    pub champs: Vec<ChampVue>,
-    /// Événement identique déjà dans Dokos.
-    pub existant: Option<DocumentVue>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ResultatEvenement {
-    pub cree: bool,
-    pub evenement: DocumentVue,
-    pub formulaire: String,
-    pub formulaire_reutilise: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PublicationVue {
-    pub page: String,
-    pub inscription: String,
-}
-
 // --- Assistant IA ---------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize)]
@@ -176,7 +118,6 @@ pub struct EtatIa {
     pub url: String,
     pub modele: String,
     pub bases_ventes: String,
-    pub bases_formulaires: String,
     pub cle_enregistree: bool,
 }
 
@@ -209,31 +150,6 @@ pub struct PropositionVenteVue {
     pub date: Option<String>,
     pub echeance: Option<String>,
     pub lignes: Vec<LigneProposeeVue>,
-    pub questions: Vec<String>,
-    pub avertissements: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct QuestionVue {
-    pub champ: String,
-    pub obligatoire: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PropositionEvenementVue {
-    pub titre: Option<String>,
-    /// Format des champs `datetime-local` : `AAAA-MM-JJTHH:MM`.
-    pub debut: Option<String>,
-    pub fin: Option<String>,
-    pub journee: bool,
-    pub lieu: Option<String>,
-    pub description: Option<String>,
-    pub places: Option<u32>,
-    pub annulation: bool,
-    pub questions_formulaire: Vec<QuestionVue>,
-    pub champs_a_creer: Vec<String>,
     pub questions: Vec<String>,
     pub avertissements: Vec<String>,
 }
@@ -299,7 +215,7 @@ pub struct ResultatGroupe {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrouillonVue {
-    /// `devis`, `commande`, `facture` ou `evenement`.
+    /// `devis`, `commande` ou `facture`.
     pub genre: String,
     pub id: String,
     pub tiers: String,
@@ -314,7 +230,6 @@ pub struct BrouillonVue {
 #[serde(rename_all = "camelCase")]
 pub struct BrouillonsVue {
     pub ventes: Vec<BrouillonVue>,
-    pub evenements: Vec<BrouillonVue>,
     pub avertissements: Vec<String>,
 }
 
@@ -323,26 +238,6 @@ pub struct BrouillonsVue {
 pub struct ResultatTransformationVue {
     pub cree: bool,
     pub document: DocumentVue,
-}
-
-// --- Inscrits ---------------------------------------------------------------------
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EvenementVue {
-    pub id: String,
-    pub titre: String,
-    pub debut: String,
-    pub publie: bool,
-    pub lien: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InscritsVue {
-    pub evenement: String,
-    pub colonnes: Vec<ChampVue>,
-    pub lignes: Vec<BTreeMap<String, String>>,
 }
 
 // --- Suivi : factures en retard -------------------------------------------

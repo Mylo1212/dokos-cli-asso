@@ -6,7 +6,7 @@ valide, ne soumet et n'annule jamais : aucun profil n'a besoin du droit
 Accès API › Générer les clés*.
 
 Les droits se donnent par **rôle** (Gestionnaire des rôles) ; le plus simple
-est de créer trois rôles dédiés et d'y attacher les DocTypes ci-dessous. Les
+est de créer un rôle dédié par profil et d'y attacher les DocTypes ci-dessous. Les
 rôles standard entre parenthèses conviennent aussi, mais donnent plus que
 nécessaire.
 
@@ -30,17 +30,6 @@ l'enregistrer) et `get_bank_cash_account` (compte d'un mode de paiement),
 demandent la lecture de la facture et du mode de paiement. Le journal comptable
 du paiement est attribué par Dokos : aucun droit sur « Accounting Journal ».
 (Rôle standard proche : *Sales User*, sans « Soumettre ».)
-
-## Profil `evenements`
-
-| DocType | Lire | Créer | Modifier | Pourquoi |
-|---|---|---|---|---|
-| Event | oui | oui | oui (publier) | événements |
-| Web Form | oui | oui | oui (publier) | formulaires d'inscription |
-| Event Registration | oui | | | inscrits d'un événement (Suivi) |
-
-La lecture de la structure d'« Event Registration » (`getdoctype`) est
-nécessaire pour les questions. (Rôle standard proche : *Website Manager*.)
 
 ## Profil `rh`
 

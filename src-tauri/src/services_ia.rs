@@ -2,10 +2,9 @@
 //! Rien n'est écrit dans Dokos ici.
 
 use assistant_core::conversation::{Message, Onglet, discuter};
-use assistant_core::evenements::proposer_evenement;
 use assistant_core::ventes::proposer_vente;
 use assistant_core::{Choix, ErreurIa, OpenWebUi};
-use dokos_core::date::{Date, DateHeure};
+use dokos_core::date::Date;
 use dokos_core::fiche::{Fiche, GenreFiche};
 use dokos_core::vente::TypeVente;
 use dokos_core::{Dokos, Transport};
@@ -34,12 +33,6 @@ pub(crate) fn vue_choix<C, V>(choix: Choix<C>, vers_vue: impl Fn(C) -> V) -> Cho
             ChoixVue { statut: "introuvable".into(), texte, valeur: None, candidats: Vec::new() }
         }
     }
-}
-
-/// `2026-12-14 14:00:00` → `2026-12-14T14:00`, pour un champ `datetime-local`.
-pub fn date_heure_locale(d: DateHeure) -> String {
-    let texte = d.to_string();
-    texte.get(..16).unwrap_or(&texte).replacen(' ', "T", 1)
 }
 
 pub fn aujourdhui(texte_date: &str) -> Resultat<Date> {
@@ -76,34 +69,6 @@ pub fn vente<D: Transport, I: Transport>(
                 livraison: l.livraison.map(|d| d.to_string()),
             })
             .collect(),
-        questions: p.questions,
-        avertissements: p.avertissements,
-    })
-}
-
-pub fn evenement<D: Transport, I: Transport>(
-    dokos: &Dokos<D>,
-    ia: &OpenWebUi<I>,
-    bases: &[String],
-    demande: &str,
-    jour: Date,
-) -> Resultat<PropositionEvenementVue> {
-    let p = proposer_evenement(dokos, ia, bases, demande, jour).map_err(texte)?;
-    Ok(PropositionEvenementVue {
-        titre: p.titre,
-        debut: p.debut.map(date_heure_locale),
-        fin: p.fin.map(date_heure_locale),
-        journee: p.journee_entiere,
-        lieu: p.lieu,
-        description: p.description,
-        places: p.places,
-        annulation: p.annulation_autorisee,
-        questions_formulaire: p
-            .questions_formulaire
-            .into_iter()
-            .map(|q| QuestionVue { champ: q.champ, obligatoire: q.obligatoire })
-            .collect(),
-        champs_a_creer: p.champs_a_creer,
         questions: p.questions,
         avertissements: p.avertissements,
     })
@@ -187,12 +152,6 @@ mod tests {
         let messages = vec![MessageChatVue { auteur: "systeme".into(), texte: "x".into(), donnees: None }];
         let jour = "2026-11-05".parse().expect("date");
         assert!(chat(&OpenWebUi::new(&ia, "m"), &[], messages, "", jour, "", |_, _| Ok(Vec::new())).is_err());
-    }
-
-    #[test]
-    fn dates_heures_pour_le_formulaire() {
-        let d: DateHeure = "2026-12-14 14:30".parse().expect("date");
-        assert_eq!(date_heure_locale(d), "2026-12-14T14:30");
     }
 
     #[test]

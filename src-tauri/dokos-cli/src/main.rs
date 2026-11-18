@@ -1,7 +1,6 @@
 //! `dokos` : piloter Dokos (version asso) depuis le terminal, par l'API REST de Frappe.
 
 mod erreur;
-mod evenements;
 mod plus;
 mod saisie;
 mod ventes;
@@ -11,9 +10,8 @@ use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
 use dokos_config::{Config, Profil};
-use dokos_core::date::{Date, DateHeure};
+use dokos_core::date::Date;
 use dokos_core::export::TypeListe;
-use dokos_core::formulaire::Question;
 use dokos_core::grand_livre::JournalFichier;
 use dokos_core::recherche::{LIMITE_RECHERCHE, chercher_client};
 use dokos_core::transformation::Transformation;
@@ -135,16 +133,13 @@ enum Action {
     /// Factures client (profil ventes)
     #[command(subcommand)]
     Facture(Facture),
-    /// Événements publics et formulaires d'inscription (profil evenements)
-    #[command(subcommand)]
-    Evenement(Evenement),
 }
 
 #[derive(Subcommand)]
 enum Connexion {
     /// Teste la connexion d'un profil puis enregistre l'URL, la clé et le secret (demandé au clavier)
     Enregistrer {
-        /// ventes, evenements, rh (export des employés) ou compta (grand livre)
+        /// ventes, rh (export des employés) ou compta (grand livre)
         #[arg(long)]
         profil: Profil,
         /// Racine du site, par exemple https://dokos.exemple.fr
@@ -294,50 +289,6 @@ enum Facture {
     Retards,
 }
 
-#[derive(Subcommand)]
-enum Evenement {
-    /// Liste les questions possibles du formulaire (champs d'Event Registration)
-    Questions,
-    /// Crée l'événement et son formulaire d'inscription, NON publiés
-    Creer {
-        #[arg(long)]
-        titre: String,
-        /// Début : « 14/12/2026 14h00 » ou « 2026-12-14 14:00 »
-        #[arg(long, value_parser = saisie::date_heure)]
-        debut: DateHeure,
-        #[arg(long, value_parser = saisie::date_heure)]
-        fin: Option<DateHeure>,
-        /// Événement sur la journée entière
-        #[arg(long)]
-        journee: bool,
-        #[arg(long)]
-        lieu: Option<String>,
-        #[arg(long)]
-        description: Option<String>,
-        /// Nombre de places ; sans limite par défaut
-        #[arg(long)]
-        places: Option<u32>,
-        /// Permet aux inscrits d'annuler
-        #[arg(long)]
-        annulation: bool,
-        /// Champ demandé : « age! » obligatoire, « allergies » facultatif. À répéter.
-        #[arg(long = "question", value_parser = saisie::question)]
-        questions: Vec<Question>,
-        #[arg(long)]
-        simulation: bool,
-        #[arg(long)]
-        autoriser_doublon: bool,
-    },
-    /// Publie l'événement et son formulaire sur le site
-    Publier { id: String },
-    /// Liste les inscrits d'un événement ; --sortie écrit un CSV
-    Inscrits {
-        id: String,
-        #[arg(long)]
-        sortie: Option<PathBuf>,
-    },
-}
-
 fn main() -> ExitCode {
     let _ = dokos_config::journal::initialiser_journal("cli");
     match executer(Cli::parse().action) {
@@ -426,12 +377,8 @@ fn executer(action: Action) -> Result<(), Erreur> {
             plus::exporter_grand_livre(&dokos, &journal, du, au, journal_fichier, sortie)
         }
         Action::Brouillons => {
-            let ventes = dokos_config::connecter(Profil::Ventes).ok().map(|(_, d)| d);
-            let evenements = dokos_config::connecter(Profil::Evenements).ok().map(|(_, d)| d);
-            if ventes.is_none() && evenements.is_none() {
-                return Err(Erreur::Saisie("aucun profil ventes ni evenements configuré".to_owned()));
-            }
-            plus::afficher_brouillons(ventes.as_ref(), evenements.as_ref())
+            let (_, dokos) = dokos_config::connecter(Profil::Ventes)?;
+            plus::afficher_brouillons(&dokos)
         }
         Action::Diagnostic => {
             print!("{}", dokos_config::journal::diagnostic("cli"));
@@ -458,7 +405,6 @@ fn executer(action: Action) -> Result<(), Erreur> {
             let (_, dokos) = dokos_config::connecter(Profil::Ventes)?;
             plus::afficher_retards(&dokos)
         }
-        Action::Evenement(evenement) => gerer_evenement(evenement),
     }
 }
 
@@ -603,43 +549,6 @@ fn enregistrer_connexion(
     println!("Configuration : {}", chemin.display());
     println!("Secret : Gestionnaire d'identification, service « {} »", dokos_config::SERVICE_TROUSSEAU);
     Ok(())
-}
-
-fn gerer_evenement(evenement: Evenement) -> Result<(), Erreur> {
-    let (config, dokos) = dokos_config::connecter(Profil::Evenements)?;
-    match evenement {
-        Evenement::Questions => evenements::lister_questions(&dokos),
-        Evenement::Creer {
-            titre,
-            debut,
-            fin,
-            journee,
-            lieu,
-            description,
-            places,
-            annulation,
-            questions,
-            simulation,
-            autoriser_doublon,
-        } => evenements::creer(
-            &dokos,
-            &evenements::Demande {
-                titre: &titre,
-                debut,
-                fin,
-                journee,
-                lieu: lieu.as_deref(),
-                description: description.as_deref(),
-                places,
-                annulation,
-                questions: &questions,
-                simulation,
-                si_doublon: si_doublon(autoriser_doublon),
-            },
-        ),
-        Evenement::Publier { id } => evenements::publier_evenement(&dokos, &config.url_base(), &id),
-        Evenement::Inscrits { id, sortie } => plus::afficher_inscrits(&dokos, &id, sortie),
-    }
 }
 
 fn afficher_resultats<'a>(resultats: impl Iterator<Item = (&'a str, &'a str)>) {

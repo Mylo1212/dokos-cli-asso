@@ -21,7 +21,7 @@ export function surChangementAssistant(ecouteur: Ecouteur): void {
   ecouteurs.add(ecouteur);
 }
 
-export type Onglet = "accueil" | "ventes" | "formulaires" | "import" | "export" | "suivi" | "reglages";
+export type Onglet = "accueil" | "ventes" | "import" | "export" | "suivi" | "reglages";
 
 /** Demande l'affichage d'une section ; `ancre` est l'identifiant d'un bloc à montrer dans celle-ci. */
 export function ouvrirOnglet(onglet: Onglet, ancre?: string): void {

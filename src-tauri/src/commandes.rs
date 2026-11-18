@@ -391,14 +391,10 @@ pub async fn creer_groupe_articles(nom: String, parent: String, conteneur: bool)
 #[tauri::command]
 pub async fn mes_brouillons() -> Resultat<BrouillonsVue> {
     bloquant(|| {
-        let mut vue = BrouillonsVue { ventes: Vec::new(), evenements: Vec::new(), avertissements: Vec::new() };
+        let mut vue = BrouillonsVue { ventes: Vec::new(), avertissements: Vec::new() };
         match connexions::connecter(Profil::Ventes) {
             Ok((config, dokos)) => vue.ventes = services_suivi::brouillons_ventes(&dokos, &config.url_base())?,
             Err(e) => vue.avertissements.push(format!("ventes : {}", e.message)),
-        }
-        match connexions::connecter(Profil::Evenements) {
-            Ok((config, dokos)) => vue.evenements = services_suivi::brouillons_evenements(&dokos, &config.url_base())?,
-            Err(e) => vue.avertissements.push(format!("événements : {}", e.message)),
         }
         Ok(vue)
     })
@@ -432,33 +428,6 @@ pub async fn transformer_document(
             );
         }
         resultat
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn evenements_recents(aujourdhui_texte: String) -> Resultat<Vec<EvenementVue>> {
-    bloquant(move || {
-        let (config, dokos) = connexions::connecter(Profil::Evenements)?;
-        services_suivi::evenements(&dokos, &config.url_base(), aujourdhui(&aujourdhui_texte)?)
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn inscrits_evenement(id: String) -> Resultat<InscritsVue> {
-    bloquant(move || services_suivi::inscrits(&connexions::connecter(Profil::Evenements)?.1, &id)).await
-}
-
-/// Exporte les inscrits en `Documents\Dokos\inscrits-<événement>.xlsx`.
-#[tauri::command]
-pub async fn exporter_inscrits(id: String) -> Resultat<String> {
-    bloquant(move || {
-        let vue = services_suivi::inscrits(&connexions::connecter(Profil::Evenements)?.1, &id)?;
-        let (entetes, lignes) = services_suivi::tableau_inscrits(&vue);
-        let chemin = dossier_documents()?.join(format!("inscrits-{}.xlsx", dokos_config::nom_de_fichier(&id)));
-        services_import::ecrire_tableau(&chemin, "Inscrits", &entetes, &lignes)?;
-        Ok(chemin.display().to_string())
     })
     .await
 }
@@ -556,62 +525,6 @@ pub async fn creer_import(
     .await
 }
 
-// --- Formulaires ------------------------------------------------------------
-
-#[tauri::command]
-pub async fn questions_formulaire() -> Resultat<Vec<ChampVue>> {
-    bloquant(|| {
-        let (_, dokos) = connexions::connecter(Profil::Evenements)?;
-        // Chargement ou « Recharger les champs » : les champs ajoutés dans Dokos doivent apparaître.
-        dokos.oublier_structures();
-        services::questions_formulaire(&dokos)
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn verifier_evenement(demande: DemandeEvenement) -> Resultat<ApercuEvenement> {
-    bloquant(move || {
-        let (config, dokos) = connexions::connecter(Profil::Evenements)?;
-        services::apercu_evenement(&dokos, &config.url_base(), &demande)
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn creer_evenement(demande: DemandeEvenement, autoriser_doublon: bool) -> Resultat<ResultatEvenement> {
-    bloquant(move || {
-        let (config, dokos) = connexions::connecter(Profil::Evenements)?;
-        let resultat =
-            services::creer_un_evenement(&dokos, &config.url_base(), &demande, si_doublon(autoriser_doublon));
-        if let Ok(r) = &resultat {
-            noter(
-                Profil::Evenements,
-                "creation",
-                "Event",
-                &r.evenement.id,
-                if r.cree { "cree" } else { "existant" },
-                &demande.titre,
-            );
-        }
-        resultat
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn publier_evenement(id: String) -> Resultat<PublicationVue> {
-    bloquant(move || {
-        let (config, dokos) = connexions::connecter(Profil::Evenements)?;
-        let resultat = services::publier_un_evenement(&dokos, &config.url_base(), &id);
-        if resultat.is_ok() {
-            noter(Profil::Evenements, "publication", "Event", &id, "ok", "");
-        }
-        resultat
-    })
-    .await
-}
-
 fn dossier_documents() -> Resultat<PathBuf> {
     dokos_config::dossier_documents().map_err(erreur)
 }
@@ -627,7 +540,6 @@ pub async fn etat_ia() -> Resultat<EtatIa> {
             url: ia.url,
             modele: ia.modele,
             bases_ventes: ia.bases.ventes.join(", "),
-            bases_formulaires: ia.bases.formulaires.join(", "),
             cle_enregistree: dokos_config::cle_ia_enregistree(),
         })
     })
@@ -637,13 +549,11 @@ pub async fn etat_ia() -> Resultat<EtatIa> {
 /// Enregistre les réglages de l'IA (et la clé si elle est donnée), puis teste.
 /// Si le test échoue, les réglages restent enregistrés et le message le dit.
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
 pub async fn enregistrer_ia(
     active: bool,
     url: String,
     modele: String,
     bases_ventes: String,
-    bases_formulaires: String,
     cle: String,
 ) -> Resultat<String> {
     bloquant(move || {
@@ -655,7 +565,6 @@ pub async fn enregistrer_ia(
         config.ia.url = url;
         config.ia.modele = Some(modele.trim().to_owned()).filter(|m| !m.is_empty()).unwrap_or(config.ia.modele);
         config.ia.bases.ventes = dokos_config::liste_bases(&bases_ventes);
-        config.ia.bases.formulaires = dokos_config::liste_bases(&bases_formulaires);
         dokos_config::ecrire(&config).map_err(erreur)?;
         if !cle.trim().is_empty() {
             dokos_config::enregistrer_cle_ia(&cle).map_err(erreur)?;
@@ -695,18 +604,12 @@ pub async fn tester_ia() -> Resultat<String> {
 }
 
 /// Chatbot : qualifie la demande, indique l'onglet et la procédure. Ne
-/// touche pas à Dokos. Les bases de connaissance de tous les domaines sont jointes.
+/// touche pas à Dokos. Les bases de connaissance des ventes sont jointes.
 #[tauri::command]
 pub async fn discuter(messages: Vec<MessageChatVue>, onglet: String, aujourdhui: String) -> Resultat<ReponseChatVue> {
     bloquant(move || {
         let ia = connexions::connecter_ia()?;
-        let b = &ia.0.bases;
-        let mut bases: Vec<String> = Vec::new();
-        for base in b.ventes.iter().chain(&b.formulaires) {
-            if !bases.contains(base) {
-                bases.push(base.clone());
-            }
-        }
+        let bases = ia.0.bases.ventes.clone();
         // Recherche de clients et d'articles, avec la clé Ventes, seulement si l'IA la demande.
         let base = connexions::config()?.url_base();
         let chercher = |genre, texte: &str| {
@@ -725,16 +628,6 @@ pub async fn assistant_vente(demande: String, aujourdhui: String) -> Resultat<Pr
         let (_, dokos) = connexions::connecter(Profil::Ventes)?;
         let ia = connexions::connecter_ia()?;
         services_ia::vente(&dokos, &ia.1, &ia.0.bases.ventes, &demande, services_ia::aujourdhui(&aujourdhui)?)
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn assistant_evenement(demande: String, aujourdhui: String) -> Resultat<PropositionEvenementVue> {
-    bloquant(move || {
-        let (_, dokos) = connexions::connecter(Profil::Evenements)?;
-        let ia = connexions::connecter_ia()?;
-        services_ia::evenement(&dokos, &ia.1, &ia.0.bases.formulaires, &demande, services_ia::aujourdhui(&aujourdhui)?)
     })
     .await
 }

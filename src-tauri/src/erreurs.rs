@@ -149,11 +149,8 @@ macro_rules! erreurs_de_validation {
 erreurs_de_validation!(
     dokos_core::date::ErreurDate,
     dokos_core::vente::ErreurVente,
-    dokos_core::evenement::ErreurEvenement,
-    dokos_core::formulaire::ErreurFormulaire,
     dokos_core::article::ErreurArticle,
     dokos_core::clientele::ErreurClient,
-    dokos_core::inscription::ErreurInscription,
 );
 
 #[cfg(test)]
