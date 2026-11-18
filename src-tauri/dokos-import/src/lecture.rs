@@ -54,17 +54,34 @@ impl Tableau {
         }
     }
 
-    /// Retire la ligne d'exemple du modèle et les lignes vides.
+    /// Retire la ligne d'exemple du modèle et les lignes vides. La ligne
+    /// d'exemple est reconnue cellule par cellule, au format près : une date
+    /// relue `2026-11-05` vaut l'exemple `05/11/2026`, un nombre `12.5` vaut `12,5`.
     pub fn sans_exemple(mut self, exemple: &[String]) -> Self {
         self.lignes.retain(|(_, valeurs)| {
             let vide = valeurs.iter().all(|v| v.trim().is_empty());
+            // Excel n'écrit pas les cellules vides de fin de ligne : on les complète.
+            let valeur = |i: usize| valeurs.get(i).map(String::as_str).unwrap_or_default();
             let est_exemple = !exemple.is_empty()
-                && valeurs.len() == exemple.len()
-                && valeurs.iter().zip(exemple).all(|(v, e)| normaliser(v) == normaliser(e));
+                && valeurs.len() <= exemple.len()
+                && exemple.iter().enumerate().all(|(i, e)| meme_valeur(valeur(i), e));
             !vide && !est_exemple
         });
         self
     }
+}
+
+/// Deux valeurs de cellule égales au format près (casse, accents, date, nombre).
+fn meme_valeur(a: &str, b: &str) -> bool {
+    if normaliser(a) == normaliser(b) {
+        return true;
+    }
+    let date = |t: &str| t.split_whitespace().next().and_then(|d| d.parse::<Date>().ok());
+    if let (Some(x), Some(y)) = (date(a), date(b)) {
+        return x == y;
+    }
+    let nombre = |t: &str| t.trim().replace(',', ".").replace(' ', "").parse::<f64>().ok();
+    matches!((nombre(a), nombre(b)), (Some(x), Some(y)) if (x - y).abs() < 1e-9)
 }
 
 /// Association des colonnes du cas aux colonnes du fichier.
@@ -341,6 +358,16 @@ mod tests {
         assert!(tableau.verifier_marque(Cas::Clients).is_err());
         let tableau = tableau.sans_exemple(&["mairie de crest".to_owned()]);
         assert_eq!(tableau.lignes.len(), 1);
+        // Exemple relu au format d'Excel : date ISO, nombre à point, cellules vides de fin absentes.
+        let exemple: Vec<String> = ["CCAS", "05/11/2026", "12,5", ""].iter().map(|s| (*s).to_owned()).collect();
+        let relu = Tableau {
+            lignes: vec![
+                (2, vec!["ccas".into(), "2026-11-05".into(), "12.5".into()]),
+                (3, vec!["CCAS".into(), "2026-11-06".into(), "12.5".into()]),
+            ],
+            ..Tableau::default()
+        };
+        assert_eq!(relu.sans_exemple(&exemple).lignes.iter().map(|(n, _)| *n).collect::<Vec<_>>(), [3]);
         let sans_marque = Tableau::default();
         assert!(matches!(sans_marque.verifier_marque(Cas::Factures), Err(ErreurImport::Modele(_))));
         let future = Tableau {

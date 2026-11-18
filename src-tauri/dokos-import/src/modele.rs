@@ -4,8 +4,10 @@
 //! commentaires, listes déroulantes), « Listes » (valeurs lues dans Dokos) et
 //! `_dokos` (caché : cas, version, date, adresse de Dokos).
 
+use dokos_core::date::Date;
 use rust_xlsxwriter::{
-    Color, DataValidation, DocProperties, Format, FormatAlign, Formula, Note, Workbook, Worksheet, XlsxError,
+    Color, DataValidation, DocProperties, ExcelDateTime, Format, FormatAlign, Formula, Note, Workbook, Worksheet,
+    XlsxError,
 };
 
 use crate::cas::{Cas, Colonne, Genre};
@@ -96,7 +98,7 @@ fn mode_emploi(
     let paragraphes = [
         format!("Résultat : {}.", cas.resultat()),
         cas.consignes().to_owned(),
-        "Remplissez l'onglet « Données » à partir de la ligne 3 (la ligne 2 est un exemple, ignoré à l'import). Ne modifiez pas la ligne des en-têtes.".to_owned(),
+        "Remplissez l'onglet « Données » à partir de la ligne 2. La ligne 2 contient un exemple, avec les mêmes listes déroulantes que les autres lignes : remplacez-la par votre première ligne ; laissée telle quelle, elle est ignorée à l'import. Ne modifiez pas la ligne des en-têtes.".to_owned(),
         "Les colonnes marquées * sont obligatoires. Les valeurs à choisir dans une liste (clients, articles…) sont celles de l'onglet « Listes », telles qu'elles étaient dans Dokos à la génération du modèle : régénérez le modèle si Dokos a changé.".to_owned(),
         "Un client ou un article se désigne par son identifiant ou par son nom exact (accents et majuscules sans importance). Un nom approximatif est signalé comme ambigu : l'appli vous demande alors de choisir, sans rien créer.".to_owned(),
         "Dates : JJ/MM/AAAA ou AAAA-MM-JJ. Nombres : virgule ou point. Oui/Non : « Oui » ou « Non ».".to_owned(),
@@ -169,7 +171,6 @@ fn donnees(
     feuille.set_tab_color(Color::RGB(0x246354));
     feuille.set_freeze_panes(1, 0)?;
     let entete = Format::new().set_bold().set_background_color(Color::RGB(0xE3EFE9)).set_locked();
-    let exemple_format = Format::new().set_italic().set_font_color(Color::RGB(0x7A7A7A));
     let date = Format::new().set_num_format("dd/mm/yyyy");
     for (i, colonne) in colonnes.iter().enumerate() {
         let c = i as u16;
@@ -188,8 +189,9 @@ fn donnees(
             let note = Note::new(colonne.aide.as_str()).set_author("Dokos Asso").add_author_prefix(false);
             feuille.insert_note(0, c, &note)?;
         }
+        // Ligne d'exemple écrite comme une ligne saisie : dates et nombres typés, sans style à part.
         if let Some(valeur) = exemple.get(i) {
-            feuille.write_string_with_format(1, c, valeur, &exemple_format)?;
+            ecrire_valeur(feuille, 1, c, colonne.genre, valeur, &date)?;
         }
         let validation = match colonne.genre {
             Genre::OuiNon => Some(DataValidation::new().allow_list_strings(&["Oui", "Non"])?),
@@ -234,6 +236,30 @@ fn marque(feuille: &mut Worksheet, cas: Cas, contexte: &ContexteModele) -> Resul
         feuille.write_string(i as u32, 1, valeur)?;
     }
     feuille.set_hidden(true);
+    Ok(())
+}
+
+/// Écrit `valeur` comme l'écrirait un utilisateur : une date en date Excel, un
+/// nombre en nombre, le reste en texte.
+fn ecrire_valeur(
+    feuille: &mut Worksheet,
+    ligne: u32,
+    colonne: u16,
+    genre: Genre,
+    valeur: &str,
+    format_date: &Format,
+) -> Result<(), XlsxError> {
+    let date = (genre == Genre::Date)
+        .then(|| valeur.parse::<Date>().ok())
+        .flatten()
+        .and_then(|d| ExcelDateTime::from_ymd(d.annee(), d.mois(), d.jour()).ok());
+    let nombre = (genre == Genre::Nombre).then(|| valeur.replace(',', ".").parse::<f64>().ok()).flatten();
+    match (date, nombre) {
+        (Some(date), _) => feuille.write_datetime_with_format(ligne, colonne, &date, format_date)?,
+        (_, Some(nombre)) => feuille.write_number(ligne, colonne, nombre)?,
+        _ if valeur.is_empty() => feuille,
+        _ => feuille.write_string(ligne, colonne, valeur)?,
+    };
     Ok(())
 }
 

@@ -129,7 +129,7 @@ pub fn generer_un_modele<T: Transport>(
     std::fs::write(&chemin, octets).map_err(|e| Erreur::Fichier(format!("{} : {e}", chemin.display())))?;
     println!("Modèle « {} » écrit : {}", cas.libelle(), chemin.display());
     println!(
-        "Remplissez l'onglet Données à partir de la ligne 3, puis : dokos importer {} \"{}\" --simulation",
+        "Remplissez l'onglet Données à partir de la ligne 2 (exemple à remplacer), puis : dokos importer {} \"{}\" --simulation",
         cas.nom(),
         chemin.display()
     );

@@ -15,8 +15,8 @@ use dokos_core::date::Date;
 use dokos_core::doublon::{SiDoublon, chercher_doublons};
 use dokos_core::erreur::DokosError;
 use dokos_core::paiement::{
-    CompteEncaissement, CreationPaiement, DOCTYPE_PAIEMENT, NouveauPaiement, chercher_paiement_identique,
-    compte_du_mode, creer_paiement,
+    CompteEncaissement, CreationPaiement, DOCTYPE_PAIEMENT, FactureARegler, NouveauPaiement,
+    chercher_paiement_identique, compte_du_mode, creer_paiement,
 };
 use dokos_core::recherche::{Candidat as _, Correspondance, normaliser, trouver_article, trouver_client};
 use dokos_core::transport::Transport;
@@ -446,42 +446,150 @@ fn document_simple(analyse: &mut Analyse, i: usize, libelle: String, resultat: R
     });
 }
 
-/// Paiements : une ligne = un paiement, en règlement d'une facture validée.
+/// Facture à régler désignée par `texte` : identifiant exact, ou à la casse et aux accents près.
+fn facture_a_regler<'a>(referentiel: &'a Referentiel, texte: &str) -> Option<&'a FactureARegler> {
+    let factures = &referentiel.factures_a_regler;
+    let cible = normaliser(texte);
+    factures.iter().find(|f| f.id == texte).or_else(|| factures.iter().find(|f| normaliser(&f.id) == cible))
+}
+
+/// Paiements : une ligne par facture réglée, regroupées en paiements.
 ///
-/// Tout ce que Dokos refuserait à la création est refusé ici, ligne par ligne :
-/// facture absente des factures à régler, montant au-delà du reste dû (en
-/// tenant compte des lignes précédentes du fichier pour la même facture), mode
-/// de paiement inconnu ou sans compte, référence manquante sur un compte bancaire.
+/// - Lot renseigné : les lignes de même lot forment un paiement, où qu'elles
+///   soient ; date, mode, référence et client sont ceux de sa première ligne.
+/// - Lot vide : la ligne rejoint le paiement de la ligne précédente si celle-ci
+///   était aussi sans lot et si la date, le mode de paiement, la référence et le
+///   client de la facture sont les mêmes ; sinon elle ouvre un paiement.
+///
+/// Tout ce que Dokos refuserait à la création est refusé ici : facture absente
+/// des factures à régler, montant au-delà du reste dû (en tenant compte de tout
+/// le fichier pour la même facture), facture en double dans un paiement,
+/// factures de clients ou de sociétés différents, mode de paiement inconnu ou
+/// sans compte, référence manquante sur un compte bancaire. Une ligne à
+/// corriger bloque tout son paiement.
 fn analyser_paiements<T: Transport>(
     analyse: &mut Analyse,
     colonnes: &Colonnes,
     dokos: &Dokos<T>,
     referentiel: &Referentiel,
 ) {
-    // Compte d'encaissement par (mode, société) : une seule question à Dokos pour chaque couple.
-    let mut comptes: BTreeMap<(String, String), Result<CompteEncaissement, String>> = BTreeMap::new();
-    // Déjà réparti par les lignes précédentes, par facture.
+    struct Groupe {
+        document: usize,
+        /// Texte du lot, vide pour un regroupement automatique.
+        lot: String,
+        /// Valeurs de la première ligne.
+        client: String,
+        nom_client: String,
+        societe: String,
+        devise: String,
+        date: String,
+        mode: String,
+        reference: String,
+        /// (facture, montant) de chaque ligne, ou `Err` pour une ligne à corriger.
+        affectations: Vec<Result<(String, f64), ()>>,
+    }
+    let mut groupes: BTreeMap<String, Groupe> = BTreeMap::new();
+    let mut ordre: Vec<String> = Vec::new();
+    // Paiement sans lot en cours : les lignes suivantes sans lot le complètent tant qu'elles lui correspondent.
+    let mut en_cours: Option<String> = None;
+    // Déjà réparti par les lignes précédentes, par facture, sur tout le fichier.
     let mut reparti: BTreeMap<String, f64> = BTreeMap::new();
+
     for i in 0..analyse.lignes.len() {
         let valeurs = analyse.lignes[i].valeurs.clone();
+        let numero = analyse.lignes[i].numero;
         let v = |c: usize| colonnes.valeur(&valeurs, c).to_owned();
-        let (facture_texte, date_texte, montant_texte, mode_texte, reference) = (v(0), v(1), v(2), v(3), v(4));
-        let mut libelle = format!("Paiement {facture_texte}");
-        let resultat = (|| -> Result<Prepare, Statut> {
+        let (lot_texte, facture_texte, date_texte, montant_texte, mode_texte, reference) =
+            (v(0), v(1), v(2), v(3), v(4), v(5));
+        let facture = facture_a_regler(referentiel, &facture_texte);
+        let client = facture.map(|f| f.client.clone()).unwrap_or_default();
+        // Même paiement : même date, même mode, même référence, même client (inconnu : sans objection).
+        let compatible = |g: &Groupe| {
+            g.date == date_texte
+                && normaliser(&g.mode) == normaliser(&mode_texte)
+                && g.reference == reference
+                && (client.is_empty() || g.client.is_empty() || client == g.client)
+        };
+        let cle = if lot_texte.is_empty() {
+            let rejoint = en_cours.as_ref().filter(|k| groupes.get(*k).is_some_and(|g| compatible(g))).cloned();
+            let cle = rejoint.unwrap_or_else(|| format!("ligne {numero}"));
+            en_cours = Some(cle.clone());
+            cle
+        } else {
+            en_cours = None;
+            format!("lot {}", normaliser(&lot_texte))
+        };
+        if !groupes.contains_key(&cle) {
+            let document = analyse.documents.len();
+            analyse.documents.push(DocumentPrepare {
+                cle: if lot_texte.is_empty() { cle.clone() } else { lot_texte.clone() },
+                libelle: String::new(),
+                lignes: Vec::new(),
+                prepare: None,
+                doublon: None,
+            });
+            groupes.insert(
+                cle.clone(),
+                Groupe {
+                    document,
+                    lot: lot_texte.clone(),
+                    client: String::new(),
+                    nom_client: String::new(),
+                    societe: String::new(),
+                    devise: String::new(),
+                    date: date_texte.clone(),
+                    mode: mode_texte.clone(),
+                    reference: reference.clone(),
+                    affectations: Vec::new(),
+                },
+            );
+            ordre.push(cle.clone());
+        }
+        let Some(groupe) = groupes.get_mut(&cle) else { continue };
+        // Le client et la société du paiement sont ceux de sa première facture connue.
+        if groupe.client.is_empty()
+            && let Some(f) = facture
+        {
+            groupe.client = f.client.clone();
+            groupe.nom_client = if f.nom_client.is_empty() { f.client.clone() } else { f.nom_client.clone() };
+            groupe.societe = f.societe.clone();
+            groupe.devise = f.devise.clone();
+        }
+        analyse.documents[groupe.document].lignes.push(i);
+        analyse.lignes[i].document = Some(groupe.document);
+
+        let statut = (|| -> Result<(String, f64), Statut> {
+            if !compatible(groupe) {
+                return Err(Statut::Invalide(format!(
+                    "date, mode de paiement, référence ou client différents de la première ligne du lot « {} »",
+                    groupe.lot
+                )));
+            }
             let facture_texte = obligatoire(&facture_texte, "Facture")?;
-            let cible = normaliser(facture_texte);
-            let facture = referentiel
-                .factures_a_regler
-                .iter()
-                .find(|f| f.id == facture_texte)
-                .or_else(|| referentiel.factures_a_regler.iter().find(|f| normaliser(&f.id) == cible))
-                .ok_or_else(|| {
-                    Statut::Invalide(format!(
-                        "Facture « {facture_texte} » : inconnue, en brouillon, annulée ou déjà soldée dans Dokos"
-                    ))
-                })?;
-            libelle = format!("Paiement {}", facture.id);
-            let date_paiement = date_obligatoire(&date_texte, "Date du paiement")?;
+            let facture = facture.ok_or_else(|| {
+                Statut::Invalide(format!(
+                    "Facture « {facture_texte} » : inconnue, en brouillon, annulée ou déjà soldée dans Dokos"
+                ))
+            })?;
+            if facture.societe != groupe.societe {
+                return Err(Statut::Invalide(format!(
+                    "Facture {} : société « {} », pas celle des autres factures du paiement ({})",
+                    facture.id, facture.societe, groupe.societe
+                )));
+            }
+            if groupe.affectations.iter().flatten().any(|(id, _)| *id == facture.id) {
+                return Err(Statut::Invalide(format!(
+                    "Facture {} déjà réglée par une autre ligne de ce paiement : regroupez ses montants",
+                    facture.id
+                )));
+            }
+            date_obligatoire(&date_texte, "Date du paiement")?;
+            dans_liste(
+                referentiel,
+                LISTE_MODES_PAIEMENT,
+                "Mode de paiement",
+                obligatoire(&mode_texte, "Mode de paiement")?,
+            )?;
             let restant = arrondi(facture.reste_du - reparti.get(&facture.id).copied().unwrap_or(0.0));
             if restant <= 0.0 {
                 return Err(Statut::Invalide(format!(
@@ -501,38 +609,73 @@ fn analyser_paiements<T: Transport>(
                     facture.id, facture.devise
                 )));
             }
-            let client = if facture.nom_client.is_empty() { &facture.client } else { &facture.nom_client };
-            libelle = format!("Paiement {} — {client} — {montant:.2} {} le {date_texte}", facture.id, facture.devise);
-            let mode = dans_liste(
-                referentiel,
-                LISTE_MODES_PAIEMENT,
-                "Mode de paiement",
-                obligatoire(&mode_texte, "Mode de paiement")?,
-            )?;
-            let cle = (mode.clone(), facture.societe.clone());
-            if !comptes.contains_key(&cle) {
-                match compte_du_mode(dokos, &mode, &facture.societe) {
+            *reparti.entry(facture.id.clone()).or_insert(0.0) += montant;
+            Ok((facture.id.clone(), montant))
+        })();
+        match statut {
+            Ok(affectation) => {
+                groupe.affectations.push(Ok(affectation));
+                analyse.lignes[i].statut = Statut::Pret;
+            }
+            Err(s) => {
+                groupe.affectations.push(Err(()));
+                analyse.lignes[i].statut = s;
+            }
+        }
+    }
+
+    // Compte d'encaissement par (mode, société) : une seule question à Dokos pour chaque couple.
+    let mut comptes: BTreeMap<(String, String), Result<CompteEncaissement, String>> = BTreeMap::new();
+    for cle in ordre {
+        let Some(g) = groupes.remove(&cle) else { continue };
+        let reglees: Vec<(&str, f64)> = g.affectations.iter().flatten().map(|(f, m)| (f.as_str(), *m)).collect();
+        let total = arrondi(reglees.iter().map(|(_, m)| m).sum());
+        let client = if g.nom_client.is_empty() { "client inconnu" } else { g.nom_client.as_str() };
+        let factures = reglees.iter().map(|(f, _)| *f).collect::<Vec<_>>().join(", ");
+        analyse.documents[g.document].libelle = format!(
+            "Paiement {client} — {total:.2} {} le {} — {} facture{} : {factures}",
+            g.devise,
+            g.date,
+            reglees.len(),
+            if reglees.len() > 1 { "s" } else { "" }
+        );
+        if g.affectations.iter().any(Result::is_err) {
+            continue;
+        }
+        let prepare = (|| -> Result<Prepare, Statut> {
+            let mode = dans_liste(referentiel, LISTE_MODES_PAIEMENT, "Mode de paiement", &g.mode)?;
+            let date_paiement = date_obligatoire(&g.date, "Date du paiement")?;
+            let cle_compte = (mode.clone(), g.societe.clone());
+            if !comptes.contains_key(&cle_compte) {
+                match compte_du_mode(dokos, &mode, &g.societe) {
                     Ok(compte) => {
-                        comptes.insert(cle.clone(), Ok(compte));
+                        comptes.insert(cle_compte.clone(), Ok(compte));
                     }
-                    // Refus de Dokos (mode sans compte pour la société) : le même pour toutes les lignes.
+                    // Refus de Dokos (mode sans compte pour la société) : le même pour tous les paiements.
                     Err(DokosError::Validation(message)) => {
-                        comptes.insert(cle.clone(), Err(message));
+                        comptes.insert(cle_compte.clone(), Err(message));
                     }
                     Err(autre) => return Err(invalide(autre)),
                 }
             }
-            let compte = match comptes.get(&cle) {
+            let compte = match comptes.get(&cle_compte) {
                 Some(Ok(compte)) => compte.clone(),
                 Some(Err(message)) => return Err(Statut::Invalide(message.clone())),
                 None => return Err(Statut::Invalide("compte d'encaissement non résolu".to_owned())),
             };
-            let paiement = NouveauPaiement::new(&facture.id, date_paiement, montant, &mode, compte, Some(&reference))
-                .map_err(invalide)?;
-            *reparti.entry(facture.id.clone()).or_insert(0.0) += paiement.montant();
-            Ok(Prepare::Paiement(paiement))
+            NouveauPaiement::new(&reglees, date_paiement, &mode, compte, Some(&g.reference))
+                .map(Prepare::Paiement)
+                .map_err(invalide)
         })();
-        document_simple(analyse, i, libelle, resultat);
+        match prepare {
+            Ok(p) => analyse.documents[g.document].prepare = Some(p),
+            Err(s) => {
+                // L'erreur porte sur tout le paiement : on la signale sur sa première ligne.
+                if let Some(&premiere) = analyse.documents[g.document].lignes.first() {
+                    analyse.lignes[premiere].statut = s;
+                }
+            }
+        }
     }
 }
 
@@ -844,9 +987,9 @@ pub fn creer<T: Transport>(
                     true,
                     e.id,
                     format!(
-                        "paiement de {:.2} créé en brouillon pour {} : à valider dans Dokos pour solder la facture",
+                        "paiement de {:.2} créé en brouillon pour {} : à valider dans Dokos pour solder les factures",
                         e.montant,
-                        p.facture()
+                        p.factures().join(", ")
                     ),
                 ),
                 CreationPaiement::DejaExistant(e) => {

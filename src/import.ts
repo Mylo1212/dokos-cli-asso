@@ -30,7 +30,7 @@ export function initialiserImport(panneau: HTMLElement): void {
           "succes",
           "Modèle généré depuis votre Dokos",
           h("p", { class: "chemin" }, c),
-          h("p", {}, "Remplissez l'onglet « Données » à partir de la ligne 3, puis revenez ici."),
+          h("p", {}, "Remplissez l'onglet « Données » à partir de la ligne 2 (la ligne d'exemple est à remplacer), puis revenez ici."),
           h("div", { class: "actions" }, lienFichier(c, "Ouvrir le modèle")),
         ),
       );

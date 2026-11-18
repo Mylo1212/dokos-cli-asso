@@ -1,11 +1,14 @@
-//! Écritures de paiement (DocType `Payment Entry`) en règlement d'une facture
-//! de vente validée. **Toujours créées en brouillon** : l'outil ne valide
-//! jamais, la facture n'est soldée qu'à la validation dans Dokos.
+//! Écritures de paiement (DocType `Payment Entry`) en règlement d'une ou de
+//! plusieurs factures de vente validées d'un même client, avec le montant
+//! affecté à chacune. **Toujours créées en brouillon** : l'outil ne valide
+//! jamais, les factures ne sont soldées qu'à la validation dans Dokos.
 //!
 //! Dokos prépare l'écriture lui-même (`get_payment_entry` : client, comptes,
-//! devises, lien vers la facture), sans l'enregistrer. L'outil y pose la date,
-//! le mode de paiement et la référence, vérifie que le montant préparé est bien
-//! celui demandé, puis la crée en brouillon. Le journal comptable n'est pas
+//! devises, lien vers la facture), sans l'enregistrer, une fois par facture.
+//! L'outil vérifie que chaque préparation porte bien le montant demandé, les
+//! réunit en une seule écriture (même client, même compte, devise de la
+//! société), y pose la date, le mode de paiement et la référence, puis la crée
+//! en brouillon. Le journal comptable n'est pas
 //! envoyé : Dokos l'attribue à l'enregistrement, d'après les règles de ses
 //! journaux.
 //!
@@ -146,7 +149,11 @@ pub fn compte_du_mode<T: Transport>(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ErreurPaiement {
+    /// Aucune facture à régler.
+    AucuneFacture,
     FactureVide,
+    /// La même facture deux fois dans un paiement.
+    FactureEnDouble(String),
     ModeVide,
     MontantInvalide,
     ReferenceTropLongue(usize),
@@ -157,7 +164,11 @@ pub enum ErreurPaiement {
 impl fmt::Display for ErreurPaiement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::AucuneFacture => write!(f, "aucune facture à régler"),
             Self::FactureVide => write!(f, "facture manquante"),
+            Self::FactureEnDouble(facture) => {
+                write!(f, "facture {facture} présente deux fois dans le même paiement : regroupez ses montants")
+            }
             Self::ModeVide => write!(f, "mode de paiement manquant"),
             Self::MontantInvalide => write!(f, "montant invalide : un nombre supérieur à zéro est attendu"),
             Self::ReferenceTropLongue(n) => {
@@ -172,39 +183,59 @@ impl fmt::Display for ErreurPaiement {
 
 impl std::error::Error for ErreurPaiement {}
 
-/// Paiement d'une facture, validé avant tout envoi à Dokos.
+/// Part d'un paiement affectée à une facture.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Affectation {
+    pub facture: String,
+    /// Arrondi au centime, supérieur à zéro.
+    pub montant: f64,
+}
+
+/// Paiement d'une ou de plusieurs factures, validé avant tout envoi à Dokos.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NouveauPaiement {
-    facture: String,
+    affectations: Vec<Affectation>,
     date: Date,
-    montant: f64,
     mode: String,
     compte: CompteEncaissement,
     reference: Option<String>,
 }
 
 impl NouveauPaiement {
-    /// `facture` : identifiant d'une facture validée ; `montant` : arrondi au
-    /// centime ; `compte` : celui du mode de paiement ([`compte_du_mode`]).
+    /// `affectations` : (identifiant d'une facture validée, montant affecté),
+    /// dans l'ordre ; montants arrondis au centime. `compte` : celui du mode de
+    /// paiement ([`compte_du_mode`]).
     pub fn new(
-        facture: &str,
+        affectations: &[(&str, f64)],
         date: Date,
-        montant: f64,
         mode: &str,
         compte: CompteEncaissement,
         reference: Option<&str>,
     ) -> Result<Self, ErreurPaiement> {
-        let facture = facture.trim();
-        if facture.is_empty() {
-            return Err(ErreurPaiement::FactureVide);
+        if affectations.is_empty() {
+            return Err(ErreurPaiement::AucuneFacture);
+        }
+        let mut validees: Vec<Affectation> = Vec::with_capacity(affectations.len());
+        for (facture, montant) in affectations {
+            let facture = facture.trim();
+            if facture.is_empty() {
+                return Err(ErreurPaiement::FactureVide);
+            }
+            if validees.iter().any(|a| a.facture == facture) {
+                return Err(ErreurPaiement::FactureEnDouble(facture.to_owned()));
+            }
+            let montant = arrondi(*montant);
+            if !montant.is_finite() || montant <= 0.0 || montant > MONTANT_MAX {
+                return Err(ErreurPaiement::MontantInvalide);
+            }
+            validees.push(Affectation { facture: facture.to_owned(), montant });
+        }
+        if validees.iter().map(|a| a.montant).sum::<f64>() > MONTANT_MAX {
+            return Err(ErreurPaiement::MontantInvalide);
         }
         let mode = mode.trim();
         if mode.is_empty() {
             return Err(ErreurPaiement::ModeVide);
-        }
-        let montant = arrondi(montant);
-        if !montant.is_finite() || montant <= 0.0 || montant > MONTANT_MAX {
-            return Err(ErreurPaiement::MontantInvalide);
         }
         let reference = reference.map(str::trim).filter(|r| !r.is_empty()).map(str::to_owned);
         if let Some(r) = &reference {
@@ -216,19 +247,25 @@ impl NouveauPaiement {
         if reference.is_none() && compte.reference_obligatoire() {
             return Err(ErreurPaiement::ReferenceObligatoire);
         }
-        Ok(Self { facture: facture.to_owned(), date, montant, mode: mode.to_owned(), compte, reference })
+        Ok(Self { affectations: validees, date, mode: mode.to_owned(), compte, reference })
     }
 
-    pub fn facture(&self) -> &str {
-        &self.facture
+    pub fn affectations(&self) -> &[Affectation] {
+        &self.affectations
+    }
+
+    /// Factures réglées, dans l'ordre.
+    pub fn factures(&self) -> Vec<&str> {
+        self.affectations.iter().map(|a| a.facture.as_str()).collect()
     }
 
     pub fn date(&self) -> Date {
         self.date
     }
 
+    /// Montant total du paiement.
     pub fn montant(&self) -> f64 {
-        self.montant
+        arrondi(self.affectations.iter().map(|a| a.montant).sum())
     }
 
     pub fn mode(&self) -> &str {
@@ -269,7 +306,7 @@ impl PaiementExistant {
     }
 }
 
-/// Paiement identique non annulé : même facture, même date, même montant.
+/// Paiement identique non annulé : même première facture, même date, même montant total.
 pub fn chercher_paiement_identique<T: Transport>(
     dokos: &Dokos<T>,
     paiement: &NouveauPaiement,
@@ -278,8 +315,8 @@ pub fn chercher_paiement_identique<T: Transport>(
         .filtre(Filtre::different("docstatus", 2))
         .filtre(Filtre::egal("payment_type", "Receive"))
         .filtre(Filtre::egal("posting_date", paiement.date.to_string()))
-        .filtre(Filtre::egal("paid_amount", paiement.montant))
-        .filtre(Filtre::enfant(DOCTYPE_REFERENCE_PAIEMENT, "reference_name", paiement.facture.as_str()))
+        .filtre(Filtre::egal("paid_amount", paiement.montant()))
+        .filtre(Filtre::enfant(DOCTYPE_REFERENCE_PAIEMENT, "reference_name", paiement.affectations[0].facture.as_str()))
         .limite(1);
     Ok(dokos.lister::<PaiementExistant>(DOCTYPE_PAIEMENT, &liste)?.into_iter().next())
 }
@@ -309,11 +346,11 @@ fn nombre(valeur: Option<&Value>) -> f64 {
     valeur.and_then(Value::as_f64).unwrap_or(0.0)
 }
 
-/// Écriture préparée par Dokos, complétée de ce que l'outil décide : date, mode
-/// de paiement, référence. Refuse ce que Dokos n'a pas préparé comme demandé.
-fn completer_ecriture(mut ecriture: Map<String, Value>, paiement: &NouveauPaiement) -> Result<Value, DokosError> {
+/// Vérifie l'écriture préparée par Dokos pour une facture : un encaissement
+/// qui ne règle que cette facture, du montant demandé.
+fn verifier_preparation(ecriture: &Map<String, Value>, affectation: &Affectation) -> Result<(), DokosError> {
     let inattendu = |detail: String| {
-        DokosError::ReponseInvalide(format!("Dokos n'a pas préparé le paiement de {} : {detail}", paiement.facture))
+        DokosError::ReponseInvalide(format!("Dokos n'a pas préparé le paiement de {} : {detail}", affectation.facture))
     };
     if ecriture.get("doctype").and_then(Value::as_str) != Some(DOCTYPE_PAIEMENT) {
         return Err(inattendu("ce n'est pas une écriture de paiement".to_owned()));
@@ -323,17 +360,80 @@ fn completer_ecriture(mut ecriture: Map<String, Value>, paiement: &NouveauPaieme
     }
     let references = ecriture.get("references").and_then(Value::as_array).cloned().unwrap_or_default();
     if references.is_empty()
-        || references.iter().any(|r| r.get("reference_name").and_then(Value::as_str) != Some(paiement.facture.as_str()))
+        || references
+            .iter()
+            .any(|r| r.get("reference_name").and_then(Value::as_str) != Some(affectation.facture.as_str()))
     {
         return Err(inattendu("la facture n'est pas la seule référence".to_owned()));
     }
     let alloue: f64 = references.iter().map(|r| nombre(r.get("allocated_amount"))).sum();
     let paye = nombre(ecriture.get("paid_amount"));
-    if !proche(alloue, paiement.montant) || !proche(paye, paiement.montant) {
+    if !proche(alloue, affectation.montant) || !proche(paye, affectation.montant) {
         return Err(inattendu(format!(
             "montant payé {paye:.2}, réparti {alloue:.2}, demandé {:.2} (facture déjà réglée ou en devise étrangère ?)",
-            paiement.montant
+            affectation.montant
         )));
+    }
+    Ok(())
+}
+
+/// Champs qui doivent être les mêmes dans les écritures préparées pour chaque
+/// facture d'un même paiement.
+const CHAMPS_COMMUNS: [&str; 5] = ["party_type", "party", "company", "paid_from", "paid_to"];
+/// Montants de l'en-tête, recalculés pour le total d'un paiement à plusieurs factures.
+const MONTANTS_TOTAUX: [&str; 6] = [
+    "paid_amount",
+    "received_amount",
+    "base_paid_amount",
+    "base_received_amount",
+    "total_allocated_amount",
+    "base_total_allocated_amount",
+];
+
+/// Une seule écriture à partir des préparations de Dokos (une par facture, dans
+/// l'ordre des affectations), complétée de ce que l'outil décide : date, mode de
+/// paiement, référence.
+fn assembler_ecriture(preparees: Vec<Map<String, Value>>, paiement: &NouveauPaiement) -> Result<Value, DokosError> {
+    for (ecriture, affectation) in preparees.iter().zip(&paiement.affectations) {
+        verifier_preparation(ecriture, affectation)?;
+    }
+    let mut preparees = preparees.into_iter();
+    let mut ecriture =
+        preparees.next().ok_or_else(|| DokosError::ReponseInvalide("aucune écriture préparée".to_owned()))?;
+    let autres: Vec<Map<String, Value>> = preparees.collect();
+    if !autres.is_empty() {
+        let factures = paiement.factures().join(", ");
+        let refuse = |detail: &str| {
+            DokosError::ReponseInvalide(format!("paiement de {factures} impossible en une seule écriture : {detail}"))
+        };
+        for autre in &autres {
+            if let Some(champ) = CHAMPS_COMMUNS.iter().find(|c| autre.get(**c) != ecriture.get(**c)) {
+                return Err(refuse(&format!(
+                    "« {champ} » diffère d'une facture à l'autre (client, société ou compte)"
+                )));
+            }
+        }
+        // Un taux de change autre que 1 : montants de l'en-tête à convertir, ce que l'outil ne fait pas.
+        let taux_unitaire =
+            |e: &Map<String, Value>, champ: &str| e.get(champ).and_then(Value::as_f64).is_none_or(|t| proche(t, 1.0));
+        if [&ecriture]
+            .into_iter()
+            .chain(&autres)
+            .any(|e| !taux_unitaire(e, "source_exchange_rate") || !taux_unitaire(e, "target_exchange_rate"))
+        {
+            return Err(refuse("facture en devise étrangère : un paiement par facture"));
+        }
+        let mut references = ecriture.get("references").and_then(Value::as_array).cloned().unwrap_or_default();
+        for autre in &autres {
+            references.extend(autre.get("references").and_then(Value::as_array).cloned().unwrap_or_default());
+        }
+        ecriture.insert("references".to_owned(), Value::Array(references));
+        let total = paiement.montant();
+        for champ in MONTANTS_TOTAUX {
+            ecriture.insert(champ.to_owned(), json!(total));
+        }
+        ecriture.insert("unallocated_amount".to_owned(), json!(0.0));
+        ecriture.insert("difference_amount".to_owned(), json!(0.0));
     }
     ecriture.insert("posting_date".to_owned(), json!(paiement.date.to_string()));
     ecriture.insert("mode_of_payment".to_owned(), json!(paiement.mode));
@@ -355,17 +455,21 @@ pub fn creer_paiement<T: Transport>(
     {
         return Ok(CreationPaiement::DejaExistant(existant));
     }
-    let mut demande = json!({
-        "dt": DOCTYPE_FACTURE,
-        "dn": paiement.facture,
-        "party_amount": paiement.montant,
-        "bank_account": paiement.compte.compte,
-    });
-    if paiement.reference.is_some() {
-        demande["reference_date"] = json!(paiement.date.to_string());
+    // Dokos prépare l'écriture de chaque facture, avec le montant qui lui est affecté.
+    let mut preparees = Vec::with_capacity(paiement.affectations.len());
+    for affectation in &paiement.affectations {
+        let mut demande = json!({
+            "dt": DOCTYPE_FACTURE,
+            "dn": affectation.facture,
+            "party_amount": affectation.montant,
+            "bank_account": paiement.compte.compte,
+        });
+        if paiement.reference.is_some() {
+            demande["reference_date"] = json!(paiement.date.to_string());
+        }
+        preparees.push(dokos.methode_post::<Map<String, Value>>(METHODE_PREPARER, demande)?);
     }
-    let prepare: Map<String, Value> = dokos.methode_post(METHODE_PREPARER, demande)?;
-    let corps = completer_ecriture(prepare, paiement)?;
+    let corps = assembler_ecriture(preparees, paiement)?;
     let cree: PaiementCree = dokos.creer(DOCTYPE_PAIEMENT, corps)?;
     if cree.docstatus != 0 {
         return Err(DokosError::ReponseInvalide(format!(
@@ -391,7 +495,8 @@ mod tests {
     }
 
     fn paiement(montant: f64, reference: Option<&str>) -> NouveauPaiement {
-        NouveauPaiement::new("ACC-SINV-1", jour(), montant, "Virement", compte("Bank"), reference).expect("paiement")
+        NouveauPaiement::new(&[("ACC-SINV-1", montant)], jour(), "Virement", compte("Bank"), reference)
+            .expect("paiement")
     }
 
     /// Ce que `get_payment_entry` renvoie : une écriture non enregistrée.
@@ -409,27 +514,31 @@ mod tests {
     #[test]
     fn validation_de_la_demande() {
         assert_eq!(
-            NouveauPaiement::new(" ", jour(), 10.0, "Espèces", compte("Cash"), None),
+            NouveauPaiement::new(&[(" ", 10.0)], jour(), "Espèces", compte("Cash"), None),
             Err(ErreurPaiement::FactureVide)
         );
-        assert_eq!(NouveauPaiement::new("F-1", jour(), 10.0, " ", compte("Cash"), None), Err(ErreurPaiement::ModeVide));
+        assert_eq!(
+            NouveauPaiement::new(&[("F-1", 10.0)], jour(), " ", compte("Cash"), None),
+            Err(ErreurPaiement::ModeVide)
+        );
         for montant in [0.0, -5.0, f64::NAN, f64::INFINITY, MONTANT_MAX * 2.0, 0.004] {
             assert_eq!(
-                NouveauPaiement::new("F-1", jour(), montant, "Espèces", compte("Cash"), None),
+                NouveauPaiement::new(&[("F-1", montant)], jour(), "Espèces", compte("Cash"), None),
                 Err(ErreurPaiement::MontantInvalide),
                 "{montant}"
             );
         }
-        let p = NouveauPaiement::new("F-1", jour(), 12.346, "Espèces", compte("Cash"), Some("  ")).expect("espèces");
+        let p =
+            NouveauPaiement::new(&[("F-1", 12.346)], jour(), "Espèces", compte("Cash"), Some("  ")).expect("espèces");
         assert_eq!((p.montant(), p.reference()), (12.35, None), "arrondi au centime, référence vide ignorée");
         // Compte bancaire : référence obligatoire ; espèces : facultative.
         assert_eq!(
-            NouveauPaiement::new("F-1", jour(), 10.0, "Virement", compte("Bank"), None),
+            NouveauPaiement::new(&[("F-1", 10.0)], jour(), "Virement", compte("Bank"), None),
             Err(ErreurPaiement::ReferenceObligatoire)
         );
-        assert!(NouveauPaiement::new("F-1", jour(), 10.0, "Virement", compte("Bank"), Some("VIR-9")).is_ok());
+        assert!(NouveauPaiement::new(&[("F-1", 10.0)], jour(), "Virement", compte("Bank"), Some("VIR-9")).is_ok());
         assert!(matches!(
-            NouveauPaiement::new("F-1", jour(), 10.0, "Chèque", compte("Cash"), Some(&"x".repeat(141))),
+            NouveauPaiement::new(&[("F-1", 10.0)], jour(), "Chèque", compte("Cash"), Some(&"x".repeat(141))),
             Err(ErreurPaiement::ReferenceTropLongue(141))
         ));
     }
@@ -479,6 +588,123 @@ mod tests {
         assert!(corps["references"][0].get("name").is_none());
         assert_eq!(corps["references"][0]["reference_name"], "ACC-SINV-1");
         assert_eq!(faux.reponses_restantes(), 0);
+    }
+
+    #[test]
+    fn plusieurs_factures_dans_une_demande() {
+        let p = NouveauPaiement::new(&[("F-1", 100.0), ("F-2", 20.004)], jour(), "Chèque", compte("Cash"), None)
+            .expect("deux factures");
+        assert_eq!(p.factures(), ["F-1", "F-2"]);
+        assert_eq!(p.montant(), 120.0);
+        assert_eq!(
+            NouveauPaiement::new(&[("F-1", 10.0), (" F-1 ", 5.0)], jour(), "Chèque", compte("Cash"), None),
+            Err(ErreurPaiement::FactureEnDouble("F-1".into()))
+        );
+        assert_eq!(
+            NouveauPaiement::new(&[], jour(), "Chèque", compte("Cash"), None),
+            Err(ErreurPaiement::AucuneFacture)
+        );
+        assert_eq!(
+            NouveauPaiement::new(&[("F-1", 10.0), ("F-2", 0.0)], jour(), "Chèque", compte("Cash"), None),
+            Err(ErreurPaiement::MontantInvalide)
+        );
+    }
+
+    /// Préparation de Dokos pour une facture d'un même client.
+    fn preparee(facture: &str, montant: f64, client: &str) -> Value {
+        json!({"message": {
+            "doctype": "Payment Entry", "docstatus": 0, "payment_type": "Receive", "party_type": "Customer",
+            "party": client, "company": "Les Amanins", "paid_from": "411 - Clients - SLA",
+            "paid_to": "512 - Banque - SLA", "source_exchange_rate": 1.0, "target_exchange_rate": 1.0,
+            "paid_amount": montant, "received_amount": montant, "base_paid_amount": montant,
+            "total_allocated_amount": montant, "unallocated_amount": 0.0,
+            "references": [{"reference_doctype": "Sales Invoice", "reference_name": facture, "allocated_amount": montant}],
+        }})
+    }
+
+    #[test]
+    fn un_paiement_pour_plusieurs_factures() {
+        let p = NouveauPaiement::new(
+            &[("ACC-SINV-1", 100.0), ("ACC-SINV-2", 20.0)],
+            jour(),
+            "Virement",
+            compte("Bank"),
+            Some("VIR-7"),
+        )
+        .expect("paiement");
+        let faux = FauxTransport::new();
+        faux.repondre_json(200, &json!({"data": []})); // doublons
+        faux.repondre_json(200, &preparee("ACC-SINV-1", 100.0, "CUST-2"));
+        faux.repondre_json(200, &preparee("ACC-SINV-2", 20.0, "CUST-2"));
+        faux.repondre_json(200, &json!({"data": {"name": "ACC-PAY-0010", "docstatus": 0, "paid_amount": 120.0}}));
+        let resultat = creer_paiement(&Dokos::new(&faux), &p, SiDoublon::Reutiliser).expect("création");
+        assert!(matches!(resultat, CreationPaiement::Cree(c) if c.id == "ACC-PAY-0010"));
+
+        let requetes = faux.requetes();
+        assert_eq!(requetes.len(), 4);
+        // Doublon cherché sur le total et la première facture.
+        let filtres = requetes[0].parametre("filters").unwrap_or_default().to_owned();
+        assert!(
+            filtres.contains(r#"["paid_amount","=",120.0]"#)
+                && filtres.contains(r#""reference_name","=","ACC-SINV-1""#)
+        );
+        // Une préparation par facture, avec le montant affecté.
+        let demandes: Vec<Value> = requetes[1..3].iter().filter_map(|r| r.corps.clone()).collect();
+        assert_eq!(
+            (demandes[0]["dn"].as_str(), demandes[0]["party_amount"].as_f64()),
+            (Some("ACC-SINV-1"), Some(100.0))
+        );
+        assert_eq!(
+            (demandes[1]["dn"].as_str(), demandes[1]["party_amount"].as_f64()),
+            (Some("ACC-SINV-2"), Some(20.0))
+        );
+        // Une seule écriture : deux références, montants de l'en-tête au total.
+        let corps = requetes[3].corps.clone().expect("corps");
+        let references: Vec<(&str, f64)> = corps["references"]
+            .as_array()
+            .expect("références")
+            .iter()
+            .map(|r| {
+                (r["reference_name"].as_str().unwrap_or_default(), r["allocated_amount"].as_f64().unwrap_or_default())
+            })
+            .collect();
+        assert_eq!(references, [("ACC-SINV-1", 100.0), ("ACC-SINV-2", 20.0)]);
+        for champ in ["paid_amount", "received_amount", "base_paid_amount", "total_allocated_amount"] {
+            assert_eq!(corps[champ], 120.0, "{champ}");
+        }
+        assert_eq!(corps["unallocated_amount"], 0.0);
+        assert_eq!(
+            (corps["mode_of_payment"].as_str(), corps["reference_no"].as_str()),
+            (Some("Virement"), Some("VIR-7"))
+        );
+        assert_eq!(corps["docstatus"], 0);
+    }
+
+    #[test]
+    fn factures_de_clients_differents_refusees() {
+        let p = NouveauPaiement::new(
+            &[("ACC-SINV-1", 100.0), ("ACC-SINV-2", 20.0)],
+            jour(),
+            "Espèces",
+            compte("Cash"),
+            None,
+        )
+        .expect("paiement");
+        let faux = FauxTransport::new();
+        faux.repondre_json(200, &preparee("ACC-SINV-1", 100.0, "CUST-2"));
+        faux.repondre_json(200, &preparee("ACC-SINV-2", 20.0, "CUST-9"));
+        let erreur = creer_paiement(&Dokos::new(&faux), &p, SiDoublon::CreerQuandMeme).expect_err("refusé");
+        assert!(matches!(&erreur, DokosError::ReponseInvalide(m) if m.contains("party")), "{erreur}");
+        assert!(faux.requetes().iter().all(|r| !r.chemin.starts_with("/api/resource/")), "rien n'est créé");
+
+        // Devise étrangère : refusé aussi, les montants de l'en-tête ne sont pas convertis.
+        let faux = FauxTransport::new();
+        faux.repondre_json(200, &preparee("ACC-SINV-1", 100.0, "CUST-2"));
+        let mut devise = preparee("ACC-SINV-2", 20.0, "CUST-2");
+        devise["message"]["source_exchange_rate"] = json!(1.08);
+        faux.repondre_json(200, &devise);
+        let erreur = creer_paiement(&Dokos::new(&faux), &p, SiDoublon::CreerQuandMeme).expect_err("devise");
+        assert!(matches!(&erreur, DokosError::ReponseInvalide(m) if m.contains("devise")), "{erreur}");
     }
 
     #[test]

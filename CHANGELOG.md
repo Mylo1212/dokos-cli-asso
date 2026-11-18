@@ -31,10 +31,19 @@ construction des installateurs (voir `.github/workflows/release.yml`).
   sans qu'il soit nécessaire de remplir le Lot. Le Lot reste utile pour regrouper
   des lignes éloignées ou séparer deux factures du même client à la même date.
   Avant, deux lignes sans Lot donnaient deux factures.
-- **Modèles d'import** : les listes déroulantes (et Oui/Non) commencent dès la
-  ligne d'exemple, et les nombres (quantités, montants, prix) s'affichent sans
+- **Modèles d'import** : la ligne d'exemple est une ligne comme les autres —
+  mêmes listes déroulantes (et Oui/Non), dates et nombres au format d'Excel, sans
+  style à part — à remplacer par sa première ligne (laissée telle quelle, elle
+  reste ignorée). Les nombres (quantités, montants, prix) s'affichent sans
   virgule en trop (`1` au lieu de `1,`). Les modèles déjà téléchargés ne changent
   pas : il faut en télécharger un nouveau.
+- **Import › Paiements : plusieurs factures par paiement.** Une ligne par
+  facture réglée, avec le montant qui lui est affecté ; les lignes qui se
+  suivent avec le même client, la même date, le même mode et la même référence
+  forment un seul paiement (nouvelle colonne facultative **Lot** pour regrouper
+  des lignes éloignées ou séparer deux paiements identiques). Dokos prépare
+  l'écriture de chaque facture, l'appli les réunit en une seule écriture de
+  paiement en brouillon. Factures en devise étrangère : un paiement par facture.
 
 ### Retiré
 

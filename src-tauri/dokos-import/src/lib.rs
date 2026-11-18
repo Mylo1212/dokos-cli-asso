@@ -94,11 +94,11 @@ mod tests {
     use crate::modele::ContexteModele;
     use crate::referentiel::{LISTE_FACTURES, LISTE_MODES_PAIEMENT};
 
-    fn facture(id: &str, reste: f64) -> FactureARegler {
+    fn facture(id: &str, reste: f64, client: &str) -> FactureARegler {
         FactureARegler {
             id: id.into(),
-            client: "CUST-2".into(),
-            nom_client: "Mairie de Crest".into(),
+            client: client.into(),
+            nom_client: if client == "CUST-2" { "Mairie de Crest".into() } else { "CCAS".into() },
             date: "2026-10-31".into(),
             reste_du: reste,
             devise: "EUR".into(),
@@ -106,9 +106,13 @@ mod tests {
         }
     }
 
-    /// Ce que la lecture de Dokos a mis dans le référentiel : deux factures, deux modes.
+    /// Ce que la lecture de Dokos a mis dans le référentiel : trois factures (deux clients), deux modes.
     fn referentiel() -> Referentiel {
-        let factures = vec![facture("ACC-SINV-1", 200.0), facture("ACC-SINV-2", 50.0)];
+        let factures = vec![
+            facture("ACC-SINV-1", 200.0, "CUST-2"),
+            facture("ACC-SINV-2", 50.0, "CUST-2"),
+            facture("ACC-SINV-3", 80.0, "CUST-5"),
+        ];
         let mut r = Referentiel::default();
         r.ajouter(LISTE_FACTURES, factures.iter().map(|f| (f.id.clone(), f.detail())).collect());
         r.ajouter(
@@ -125,62 +129,81 @@ mod tests {
         faux.repondre_json(200, &json!({"data": {"name": "512 - Banque - SLA", "account_type": type_compte}}));
     }
 
-    fn ecriture_preparee(facture: &str, montant: f64) -> serde_json::Value {
+    /// Préparation de Dokos pour une facture.
+    fn ecriture_preparee(facture: &str, montant: f64, client: &str) -> serde_json::Value {
         json!({"message": {
             "doctype": "Payment Entry", "name": "new-payment-entry-1", "docstatus": 0, "payment_type": "Receive",
+            "party_type": "Customer", "party": client, "company": "Les Amanins",
+            "paid_from": "411 - Clients - SLA", "paid_to": "512 - Banque - SLA",
             "paid_amount": montant, "received_amount": montant,
             "references": [{"reference_name": facture, "allocated_amount": montant}],
         }})
     }
 
+    fn ligne(valeurs: [&str; 6]) -> Vec<String> {
+        valeurs.iter().map(|v| (*v).to_owned()).collect()
+    }
+
+    fn modele_paiements(referentiel: &Referentiel) -> Tableau {
+        let contexte =
+            ContexteModele { url_dokos: "https://dokos.test".into(), date: "2026-11-05".into(), societe: None };
+        let octets = generer_modele(Cas::Paiements, referentiel, &contexte).expect("modèle");
+        let tableau = lire_octets(&octets, "xlsx").expect("lecture");
+        tableau.verifier_marque(Cas::Paiements).expect("marque du cas");
+        tableau
+    }
+
     #[test]
     fn modele_et_import_de_paiements() {
         let referentiel = referentiel();
-        let contexte =
-            ContexteModele { url_dokos: "https://dokos.test".into(), date: "2026-11-05".into(), societe: None };
-        let octets = generer_modele(Cas::Paiements, &referentiel, &contexte).expect("modèle");
-        let mut tableau = lire_octets(&octets, "xlsx").expect("lecture");
-        tableau.verifier_marque(Cas::Paiements).expect("marque du cas");
+        let mut tableau = modele_paiements(&referentiel);
         let noms: Vec<&str> = tableau.entetes.iter().map(String::as_str).collect();
-        assert_eq!(noms, ["Facture *", "Date du paiement *", "Montant", "Mode de paiement *", "Référence"]);
+        assert_eq!(noms, ["Lot", "Facture *", "Date du paiement *", "Montant", "Mode de paiement *", "Référence"]);
 
-        // Quatre lignes : un virement complet (montant vide), un règlement partiel puis son solde,
-        // et un paiement qui dépasse le reste dû.
-        let ligne = |valeurs: [&str; 5]| valeurs.iter().map(|v| (*v).to_owned()).collect::<Vec<_>>();
         tableau.lignes = vec![
-            (3, ligne(["ACC-SINV-1", "05/11/2026", "", "Virement", "VIR-1"])),
-            (4, ligne(["ACC-SINV-2", "06/11/2026", "20", "espèces", ""])),
-            (5, ligne(["ACC-SINV-2", "07/11/2026", "40", "Espèces", ""])),
-            (6, ligne(["ACC-SINV-9", "07/11/2026", "10", "Espèces", ""])),
+            // Un virement pour deux factures de la Mairie : tout le reste dû de la première, 30 sur la seconde.
+            (3, ligne(["", "ACC-SINV-1", "05/11/2026", "", "Virement", "VIR-1"])),
+            (4, ligne(["", "acc-sinv-2", "05/11/2026", "30", "virement", "VIR-1"])),
+            // Même virement, mais facture d'un autre client : paiement à part.
+            (5, ligne(["", "ACC-SINV-3", "05/11/2026", "", "Virement", "VIR-1"])),
+            // ACC-SINV-2 : 30 déjà réparti, reste 20.
+            (6, ligne(["", "ACC-SINV-2", "06/11/2026", "30", "Espèces", ""])),
+            (7, ligne(["X", "ACC-SINV-9", "07/11/2026", "10", "Espèces", ""])),
         ];
         let faux = FauxTransport::new();
         let dokos = Dokos::new(&faux);
-        compte(&faux, "Bank"); // Virement
-        compte(&faux, "Cash"); // Espèces
+        compte(&faux, "Bank"); // Virement, demandé une seule fois pour les deux paiements
         let mut analyse =
             analyser(&dokos, Cas::Paiements, &tableau, &referentiel, &Options::default()).expect("analyse");
-        assert_eq!(analyse.documents.len(), 4);
+        let groupes: Vec<&[usize]> = analyse.documents.iter().map(|d| d.lignes.as_slice()).collect();
+        assert_eq!(groupes, [&[0, 1][..], &[2], &[3], &[4]]);
         assert!(analyse.documents[0].pret() && analyse.documents[1].pret());
         assert!(
-            matches!(&analyse.lignes[2].statut, Statut::Invalide(m) if m.contains("reste dû") && m.contains("30.00")),
-            "{:?}",
-            analyse.lignes[2].statut
+            analyse.documents[0].libelle.contains("Mairie de Crest — 230.00 EUR")
+                && analyse.documents[0].libelle.contains("2 factures : ACC-SINV-1, ACC-SINV-2"),
+            "{}",
+            analyse.documents[0].libelle
         );
-        assert!(matches!(&analyse.lignes[3].statut, Statut::Invalide(m) if m.contains("ACC-SINV-9")));
-        assert!(analyse.documents[0].libelle.contains("200.00 EUR"), "{}", analyse.documents[0].libelle);
+        assert!(
+            matches!(&analyse.lignes[3].statut, Statut::Invalide(m) if m.contains("reste dû") && m.contains("20.00")),
+            "{:?}",
+            analyse.lignes[3].statut
+        );
+        assert!(matches!(&analyse.lignes[4].statut, Statut::Invalide(m) if m.contains("ACC-SINV-9")));
 
-        faux.repondre_json(200, &json!({"data": []})); // doublon, ligne 1
-        faux.repondre_json(200, &json!({"data": []})); // doublon, ligne 2
+        faux.repondre_json(200, &json!({"data": []})); // doublon, paiement 1
+        faux.repondre_json(200, &json!({"data": []})); // doublon, paiement 2
         verifier(&dokos, &mut analyse).expect("vérification");
         assert_eq!(analyse.doublons(), 0);
 
-        // « Seulement les prêts » : les deux premiers paiements sont créés, les autres ignorés.
+        // « Seulement les prêts » : les deux paiements sont créés, les autres ignorés.
         faux.repondre_json(200, &json!({"data": []})); // doublon à la création
-        faux.repondre_json(200, &ecriture_preparee("ACC-SINV-1", 200.0));
-        faux.repondre_json(200, &json!({"data": {"name": "ACC-PAY-1", "docstatus": 0, "paid_amount": 200.0}}));
+        faux.repondre_json(200, &ecriture_preparee("ACC-SINV-1", 200.0, "CUST-2"));
+        faux.repondre_json(200, &ecriture_preparee("ACC-SINV-2", 30.0, "CUST-2"));
+        faux.repondre_json(200, &json!({"data": {"name": "ACC-PAY-1", "docstatus": 0, "paid_amount": 230.0}}));
         faux.repondre_json(200, &json!({"data": []}));
-        faux.repondre_json(200, &ecriture_preparee("ACC-SINV-2", 20.0));
-        faux.repondre_json(200, &json!({"data": {"name": "ACC-PAY-2", "docstatus": 0, "paid_amount": 20.0}}));
+        faux.repondre_json(200, &ecriture_preparee("ACC-SINV-3", 80.0, "CUST-5"));
+        faux.repondre_json(200, &json!({"data": {"name": "ACC-PAY-2", "docstatus": 0, "paid_amount": 80.0}}));
         let resultats =
             creer(&dokos, &analyse, &OptionsCreation { seulement_prets: true, si_doublon: SiDoublon::Reutiliser })
                 .expect("création");
@@ -189,8 +212,7 @@ mod tests {
             statuts,
             [StatutCreation::Cree, StatutCreation::Cree, StatutCreation::Ignore, StatutCreation::Ignore]
         );
-        assert_eq!(resultats[0].doctype, "Payment Entry");
-        assert_eq!(resultats[0].id.as_deref(), Some("ACC-PAY-1"));
+        assert_eq!((resultats[0].doctype.as_str(), resultats[0].id.as_deref()), ("Payment Entry", Some("ACC-PAY-1")));
         let envoyes: Vec<_> = faux
             .requetes()
             .into_iter()
@@ -198,46 +220,50 @@ mod tests {
             .filter_map(|r| r.corps)
             .collect();
         assert_eq!(envoyes.len(), 2);
+        assert_eq!(envoyes[0]["references"].as_array().map(Vec::len), Some(2));
+        assert_eq!(envoyes[0]["paid_amount"], 230.0);
         assert_eq!(
             (envoyes[0]["mode_of_payment"].as_str(), envoyes[0]["reference_no"].as_str()),
             (Some("Virement"), Some("VIR-1"))
         );
-        assert_eq!(
-            (envoyes[1]["mode_of_payment"].as_str(), envoyes[1]["posting_date"].as_str()),
-            (Some("Espèces"), Some("2026-11-06"))
-        );
-        assert!(envoyes[1].get("reference_no").is_none());
+        assert_eq!(envoyes[1]["references"][0]["reference_name"], "ACC-SINV-3");
         assert_eq!(faux.reponses_restantes(), 0);
     }
 
     #[test]
     fn rien_cree_si_une_ligne_de_paiement_bloque() {
         let referentiel = referentiel();
-        let mut tableau = lire_octets(
-            &generer_modele(
-                Cas::Paiements,
-                &referentiel,
-                &ContexteModele { url_dokos: String::new(), date: "2026-11-05".into(), societe: None },
-            )
-            .expect("modèle"),
-            "xlsx",
-        )
-        .expect("lecture");
-        // Compte bancaire sans référence, et mode inconnu.
+        let mut tableau = modele_paiements(&referentiel);
         tableau.lignes = vec![
-            (3, vec!["ACC-SINV-1".into(), "05/11/2026".into(), String::new(), "Virement".into(), String::new()]),
-            (4, vec!["ACC-SINV-2".into(), "05/11/2026".into(), String::new(), "Troc".into(), String::new()]),
+            // Lot L : la seconde ligne n'a pas la date de la première.
+            (3, ligne(["L", "ACC-SINV-1", "05/11/2026", "", "Espèces", ""])),
+            (4, ligne(["L", "ACC-SINV-2", "06/11/2026", "", "Espèces", ""])),
+            // Compte bancaire sans référence.
+            (5, ligne(["", "ACC-SINV-3", "05/11/2026", "", "Virement", ""])),
+            // Mode inconnu.
+            (6, ligne(["", "ACC-SINV-3", "08/11/2026", "1", "Troc", ""])),
+            // Même facture deux fois dans un paiement.
+            (7, ligne(["M", "ACC-SINV-2", "09/11/2026", "5", "Espèces", ""])),
+            (8, ligne(["M", "ACC-SINV-2", "09/11/2026", "5", "Espèces", ""])),
         ];
         let faux = FauxTransport::new();
         compte(&faux, "Bank");
         let dokos = Dokos::new(&faux);
         let analyse = analyser(&dokos, Cas::Paiements, &tableau, &referentiel, &Options::default()).expect("analyse");
-        assert!(matches!(&analyse.lignes[0].statut, Statut::Invalide(m) if m.contains("référence obligatoire")));
-        assert!(matches!(&analyse.lignes[1].statut, Statut::Introuvable { champ, .. } if champ == "Mode de paiement"));
+        assert!(analyse.lignes[0].statut.est_pret());
+        assert!(matches!(&analyse.lignes[1].statut, Statut::Invalide(m) if m.contains("première ligne du lot « L »")));
+        assert!(analyse.documents[0].prepare.is_none(), "une ligne à corriger bloque tout le paiement");
+        assert!(matches!(&analyse.lignes[2].statut, Statut::Invalide(m) if m.contains("référence obligatoire")));
+        assert!(matches!(&analyse.lignes[3].statut, Statut::Introuvable { champ, .. } if champ == "Mode de paiement"));
+        assert!(
+            matches!(&analyse.lignes[5].statut, Statut::Invalide(m) if m.contains("déjà réglée par une autre ligne"))
+        );
+        assert_eq!(analyse.documents_prets(), 0);
         let erreur =
             creer(&dokos, &analyse, &OptionsCreation { seulement_prets: false, si_doublon: SiDoublon::Reutiliser })
                 .expect_err("bloqué");
-        assert_eq!(erreur, ErreurImport::LignesBloquantes(2));
+        assert_eq!(erreur, ErreurImport::LignesBloquantes(4));
         assert!(faux.requetes().iter().all(|r| r.methode != Methode::Post || r.chemin.contains("/api/method/")));
+        assert_eq!(faux.reponses_restantes(), 0);
     }
 }

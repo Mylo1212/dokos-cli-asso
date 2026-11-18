@@ -133,6 +133,12 @@ impl Cas {
             ],
             Self::Paiements => vec![
                 c(
+                    "Lot",
+                    false,
+                    Genre::Texte,
+                    "Facultatif. Même valeur sur toutes les lignes d'un même paiement, même éloignées. Vide : les lignes qui se suivent avec le même client, la même date, le même mode de paiement et la même référence forment un seul paiement ; mettez un lot pour séparer deux paiements identiques.",
+                ),
+                c(
                     "Facture",
                     true,
                     Genre::Texte,
@@ -144,7 +150,7 @@ impl Cas {
                     "Montant",
                     false,
                     Genre::Nombre,
-                    "Facultatif : montant encaissé. Vide : tout le reste dû de la facture. Jamais plus que le reste dû.",
+                    "Facultatif : montant du paiement affecté à cette facture. Vide : tout son reste dû. Jamais plus que le reste dû.",
                 ),
                 c(
                     "Mode de paiement",
@@ -190,7 +196,7 @@ impl Cas {
                 vec![v("Mairie de Crest"), v("Organisation"), v(""), v(""), v("mairie@crest.fr"), v("04 75 00 00 00")]
             }
             Self::Paiements => {
-                vec![v("ACC-SINV-2026-00012"), v("05/11/2026"), v(""), v("Virement"), v("VIR-2026-118")]
+                vec![v(""), v("ACC-SINV-2026-00012"), v("05/11/2026"), v(""), v("Virement"), v("VIR-2026-118")]
             }
         }
     }
@@ -208,7 +214,7 @@ impl Cas {
                 "Une ligne par client. Un client de même nom n'est pas recréé. Les contacts et adresses détaillés se saisissent ensuite dans Dokos."
             }
             Self::Paiements => {
-                "Une ligne par paiement reçu, en règlement d'une facture déjà validée dans Dokos. Dokos prépare l'écriture de paiement (client, comptes, lien vers la facture) ; le fichier donne la date, le montant, le mode de paiement et la référence. Le montant vide règle tout le reste dû ; plusieurs lignes pour une même facture (règlement en plusieurs fois) ne peuvent pas dépasser ensemble son reste dû. La référence est obligatoire quand le mode de paiement encaisse sur un compte bancaire. Chaque paiement est créé en brouillon : la facture n'est soldée qu'une fois le paiement validé dans Dokos, après relecture. Le journal comptable est attribué par Dokos selon ses règles."
+                "Une ligne par facture réglée, avec le montant qui lui est affecté ; un paiement peut régler plusieurs factures d'un même client. Sans Lot, les lignes qui se suivent avec le même client, la même date, le même mode de paiement et la même référence forment un seul paiement, réparti entre leurs factures. Avec un Lot, les lignes qui le partagent forment un seul paiement, même éloignées : date, mode, référence et client doivent être les mêmes que sur la première ligne du lot. Pour deux paiements identiques qui se suivent, indiquez deux Lots différents. Dokos prépare l'écriture de paiement (client, comptes, lien vers les factures) ; le fichier donne la date, les montants, le mode de paiement et la référence. Le montant vide règle tout le reste dû de la facture ; les montants d'une même facture sur tout le fichier (règlement en plusieurs fois) ne peuvent pas dépasser son reste dû. La référence est obligatoire quand le mode de paiement encaisse sur un compte bancaire. Chaque paiement est créé en brouillon : la facture n'est soldée qu'une fois le paiement validé dans Dokos, après relecture. Le journal comptable est attribué par Dokos selon ses règles."
             }
         }
     }

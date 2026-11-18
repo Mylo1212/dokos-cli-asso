@@ -117,8 +117,10 @@ Quatre cas d'usage : **Factures**, **Paiements**, **Articles** et **Clients**.
 1. Choisissez le **cas d'usage** et **téléchargez le modèle**. Il est généré
    depuis votre Dokos : les listes déroulantes du classeur contiennent vos
    clients, articles, groupes, territoires… Régénérez-le si Dokos change.
-2. Remplissez l'onglet **Données** à partir de la ligne 3 (la ligne 2 est un
-   exemple). Le mode d'emploi est dans le premier onglet du classeur.
+2. Remplissez l'onglet **Données** à partir de la ligne 2. Elle contient un
+   exemple, avec les mêmes listes déroulantes que les autres lignes : remplacez-le
+   par votre première ligne (laissé tel quel, il est ignoré à l'import). Le mode
+   d'emploi est dans le premier onglet du classeur.
 3. **Choisir un fichier…** : l'appli analyse chaque ligne et affiche un statut :
    prêt, à préciser (plusieurs correspondances : cliquez la bonne),
    introuvable, invalide. Elle cherche aussi les doublons.
@@ -134,17 +136,26 @@ Quatre cas d'usage : **Factures**, **Paiements**, **Articles** et **Clients**.
   suivent pas (même Lot = même facture) ou à séparer deux factures du même
   client à la même date (deux Lots différents). Les factures sont des
   brouillons.
-- **Paiements** : une ligne par paiement reçu en règlement d'une **facture déjà
-  validée** dans Dokos. Colonnes : **Facture** (liste des factures dont le solde
-  n'est pas nul), **Date du paiement**, **Montant** (facultatif : vide, tout le
-  reste dû), **Mode de paiement** (liste des modes actifs de Dokos) et
-  **Référence** (numéro de chèque, de virement…). Dokos prépare l'écriture de
-  paiement (client, comptes, lien vers la facture) et le mode de paiement
-  détermine le compte d'encaissement ; la référence est **obligatoire** quand ce
-  compte est bancaire. Plusieurs lignes pour une même facture (règlement en
-  plusieurs fois) ne peuvent pas dépasser ensemble son reste dû. Chaque paiement
-  est créé en **brouillon** : la facture n'est soldée qu'une fois le paiement
-  validé dans Dokos. Le journal comptable est attribué par Dokos.
+- **Paiements** : une ligne par **facture réglée**, avec le montant qui lui est
+  affecté ; un même paiement peut régler **plusieurs factures d'un même client**.
+  Colonnes : **Lot** (facultatif), **Facture** (liste des factures validées dont
+  le solde n'est pas nul), **Date du paiement**, **Montant** (facultatif : vide,
+  tout le reste dû de la facture), **Mode de paiement** (liste des modes actifs
+  de Dokos) et **Référence** (numéro de chèque, de virement…).
+  - Les lignes qui se suivent avec le même client, la même date, le même mode et
+    la même référence forment **un seul paiement**, réparti entre leurs
+    factures. Le **Lot** sert à regrouper des lignes qui ne se suivent pas (même
+    Lot = même paiement) ou à séparer deux paiements identiques.
+  - Dokos prépare l'écriture de paiement (client, comptes, lien vers chaque
+    facture) et le mode de paiement détermine le compte d'encaissement ; la
+    référence est **obligatoire** quand ce compte est bancaire.
+  - Les montants d'une même facture sur tout le fichier (règlement en plusieurs
+    fois) ne peuvent pas dépasser son reste dû ; une facture ne peut figurer
+    qu'une fois dans un paiement ; une ligne à corriger bloque tout son
+    paiement. Factures en devise étrangère : un paiement par facture.
+  - Chaque paiement est créé en **brouillon** : les factures ne sont soldées
+    qu'une fois le paiement validé dans Dokos. Le journal comptable est attribué
+    par Dokos.
 - **Articles** : créés **désactivés**, à activer depuis le catalogue ou dans
   Dokos. Un code ou un libellé déjà présent n'est pas recréé.
 - **Clients** : un client de même nom n'est pas recréé ; contacts et adresses
